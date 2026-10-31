@@ -1,69 +1,51 @@
 package com.beadout.bot;
 
 public final class LevelCycleTest {
-    static int checks;
-    static void check(boolean ok,String message){checks++;if(!ok)throw new AssertionError(message);}
-    static LevelCycle.Action step(LevelCycle c,long ms,boolean win,boolean foreground,boolean ready){return c.update(ms*1_000_000L,win,foreground,ready);}
-    static LevelCycle awaitingNext(){
-        LevelCycle c=new LevelCycle();step(c,0,true,true,false);step(c,500,true,true,false);
-        check(step(c,1000,true,true,false)==LevelCycle.Action.HOME,"stable win presses Home once");
-        c.homeSent(1100*1_000_000L);
-        check(step(c,4099,false,false,false)==LevelCycle.Action.NONE,"wait full three seconds after actual Home key release");
-        check(step(c,4100,false,false,false)==LevelCycle.Action.LAUNCH,"reopen at three seconds");
-        check(step(c,4200,false,false,false)==LevelCycle.Action.NONE,"do not relaunch repeatedly");
-        step(c,4500,true,true,false);step(c,4501,true,true,false);step(c,4800,true,true,false);
-        check(step(c,5001,true,true,false)==LevelCycle.Action.NEXT,"reconfirm win/Next after reopening");return c;
-    }
-    static LevelCycle.Action menu(LevelCycle c,long ms){return c.update(ms*1_000_000L,false,true,false,true);}
-    static void recoveryCases(){
-        LevelCycle c=awaitingNext();
-        check(step(c,7000,false,false,false)==LevelCycle.Action.NONE,"allow two seconds for post-Next transition");
-        check(step(c,7001,false,false,false)==LevelCycle.Action.HOME,"post-Next ad is backgrounded, not tapped");
-        c.homeSent(7100*1_000_000L);
-        check(step(c,10099,false,false,false)==LevelCycle.Action.NONE,"ad recovery also waits full three seconds");
-        check(step(c,10100,false,false,false)==LevelCycle.Action.LAUNCH,"reopen after post-Next ad");
-        menu(c,10400);menu(c,10500);menu(c,10800);
-        check(menu(c,11000)==LevelCycle.Action.PLAY_MENU,"return to Bead Out Home taps recognized Play");
-        check(menu(c,11200)==LevelCycle.Action.NONE,"do not repeat Play while menu is transitioning");
-        step(c,11400,false,true,true);step(c,11700,false,true,true);
-        check(step(c,12000,false,true,true)==LevelCycle.Action.RESET,"menu Play returns to automatic prediction");
+ static int checks;
+ static void check(boolean b,String s){checks++;if(!b)throw new AssertionError(s);}
+ static LevelCycle.Action step(LevelCycle c,long ms,boolean win,boolean game,boolean board){return c.update(ms*1_000_000L,win,game,board);}
+ static LevelCycle.Action menu(LevelCycle c,long ms){return c.update(ms*1_000_000L,false,true,false,true);}
+ static LevelCycle afterNext(){
+  LevelCycle c=new LevelCycle();check(step(c,0,true,true,false)==LevelCycle.Action.NONE,"one win frame does not navigate");step(c,500,true,true,false);
+  check(step(c,1000,true,true,false)==LevelCycle.Action.NEXT,"Next precedes Home after stable win");
+  check(step(c,1500,true,true,false)==LevelCycle.Action.NONE,"unacknowledged Next is rate limited");
+  check(step(c,2000,true,true,false)==LevelCycle.Action.NEXT,"failed/stale tap can be retried on confirmed Next");
+  c.nextSent(2100_000_000L);check(c.stage()==LevelCycle.Stage.POST_NEXT_WAIT,"only actual successful tap starts two-second timer");
+  check(step(c,4099,false,true,true)==LevelCycle.Action.NONE,"even a fast-loading board gets full two seconds before Home");
+  check(step(c,4100,false,false,false)==LevelCycle.Action.HOME,"Home exactly two seconds after acknowledged Next");
+  check(step(c,4500,false,false,false)==LevelCycle.Action.NONE,"Home waits for acknowledgment instead of assuming delivery");
+  c.homeSent(4600_000_000L);
+  check(step(c,7599,false,false,false)==LevelCycle.Action.NONE,"Home wait starts at actual key completion");
+  check(step(c,7600,false,false,false)==LevelCycle.Action.LAUNCH,"reopen after full three-second Home wait");
+  c.launchSent(7800_000_000L);return c;
+ }
+ static void normalAndMenu(){
+  LevelCycle c=afterNext();step(c,8000,false,true,true);step(c,8300,false,true,true);
+  check(step(c,8600,false,true,true)==LevelCycle.Action.RESET,"new board resets tracking and returns to continuous play");check(c.stage()==LevelCycle.Stage.MONITOR,"cycle returns to monitor after one level");
+  step(c,10000,true,true,false);step(c,10500,true,true,false);check(step(c,11000,true,true,false)==LevelCycle.Action.NEXT,"second completed level continues without pressing Start again");
+  c=afterNext();menu(c,8000);menu(c,8100);menu(c,8400);check(menu(c,8600)==LevelCycle.Action.PLAY_MENU,"Bead Out home menu triggers Play");
+  check(menu(c,9000)==LevelCycle.Action.NONE,"Play is rate limited until delivery acknowledged");c.menuSent(9100_000_000L);
+  step(c,9300,false,true,true);step(c,9600,false,true,true);check(step(c,9900,false,true,true)==LevelCycle.Action.RESET,"menu Play resumes the new board automatically");
+  c=afterNext();step(c,8000,true,true,false);step(c,8100,true,true,false);step(c,8600,true,true,false);check(step(c,9200,true,true,false)==LevelCycle.Action.NEXT,"a returned Congrats screen can confirm Next again after reopen");
+ }
+ static void unknownRecovery(){
+  LevelCycle c=afterNext();check(step(c,11799,false,false,false)==LevelCycle.Action.NONE,"allow load time after actual launch completion");
+  check(step(c,11800,false,false,false)==LevelCycle.Action.HOME,"unknown/ad return uses system Home only");c.homeSent(11800_000_000L);
+  check(step(c,14800,false,false,false)==LevelCycle.Action.LAUNCH,"ad recovery keeps full Home delay");c.launchSent(15000_000_000L);
+  check(step(c,19000,false,false,false)==LevelCycle.Action.HOME,"third Home recovery is available");c.homeSent(19000_000_000L);step(c,22000,false,false,false);c.launchSent(22200_000_000L);
+  check(step(c,26200,false,false,false)==LevelCycle.Action.NONE&&c.retryWaiting(),"recovery exhaustion becomes cooldown instead of terminating automatic play");
+  check(step(c,36199,false,false,false)==LevelCycle.Action.NONE,"cooldown prevents rapid endless navigation");check(step(c,36200,false,false,false)==LevelCycle.Action.HOME,"recovery retries after cooldown without another Start");
+  c.retryAfterError(40000_000_000L);step(c,40100,false,true,true);step(c,40400,false,true,true);check(step(c,40700,false,true,true)==LevelCycle.Action.RESET,"a readable board can interrupt cooldown and resume play");
+  c=afterNext();boolean noUnsafe=true;int homes=0,reopens=0;
+  for(long ms=8000;ms<240000;ms+=250){LevelCycle.Action action=step(c,ms,false,false,false);noUnsafe&=action!=LevelCycle.Action.FAIL&&action!=LevelCycle.Action.NEXT&&action!=LevelCycle.Action.PLAY_MENU;if(action==LevelCycle.Action.HOME){homes++;c.homeSent(ms*1_000_000L);}if(action==LevelCycle.Action.LAUNCH){reopens++;c.launchSent(ms*1_000_000L);}}
+  check(noUnsafe,"four minutes of unknown ads never receive button taps or terminate automatic mode");check(homes>=6,"continuous recovery survives multiple retry bursts");check(reopens>=6,"continuous recovery repeatedly returns to the game");
 
-        c=new LevelCycle();menu(c,0);menu(c,100);menu(c,400);
-        check(menu(c,600)==LevelCycle.Action.PLAY_MENU,"recognized menu can recover without seeing another win");
-        check(menu(c,700)==LevelCycle.Action.NONE,"menu Play is issued once before recovery");
-        check(menu(c,3600)==LevelCycle.Action.HOME,"stalled Play uses Home instead of repeated Play taps");
-        c.homeSent(3600*1_000_000L);step(c,6600,false,false,false);
-        menu(c,6700);menu(c,6800);menu(c,7100);
-        check(menu(c,7300)==LevelCycle.Action.PLAY_MENU,"allow one Play retry only after reopening");
-        menu(c,10300);c.homeSent(10300*1_000_000L);step(c,13300,false,false,false);
-        menu(c,13400);menu(c,13500);menu(c,13800);
-        check(menu(c,14000)==LevelCycle.Action.FAIL,"persistent menu is bounded to two Play attempts");
-
-        c=awaitingNext();step(c,7001,false,false,false);c.homeSent(7001*1_000_000L);step(c,10001,false,false,false);
-        check(step(c,14001,false,false,false)==LevelCycle.Action.HOME,"second recovery for persistent ad");
-        c.homeSent(14001*1_000_000L);step(c,17001,false,false,false);
-        check(step(c,21001,false,false,false)==LevelCycle.Action.FAIL,"home/ad recovery attempts are bounded");
-
-        c=awaitingNext();step(c,7001,false,false,false);c.homeSent(7001*1_000_000L);step(c,10001,false,false,false);
-        check(step(c,11000,true,true,false)==LevelCycle.Action.NONE,"old win after ad does not repeat Next");
-        check(step(c,23000,true,true,false)==LevelCycle.Action.FAIL,"unchanged old win eventually stops");
-    }
-    public static void main(String[]args){
-        LevelCycle c=awaitingNext();
-        check(step(c,5100,true,true,false)==LevelCycle.Action.NONE,"Next is never spammed");
-        step(c,5300,false,true,true);step(c,5600,false,true,true);
-        check(step(c,5800,false,true,true)==LevelCycle.Action.RESET,"new board confirmed before resetting planner");
-        check(c.stage()==LevelCycle.Stage.MONITOR,"automatic play can resume on next level");
-        c=new LevelCycle();step(c,0,true,true,false);step(c,100,false,true,false);
-        check(c.stage()==LevelCycle.Stage.MONITOR,"one transient win-like frame does not navigate");
-        check(step(c,2000,true,false,false)==LevelCycle.Action.NONE,"win marker in another app cannot press Home");
-        c=awaitingNext();
-        check(step(c,21000,true,true,false)==LevelCycle.Action.FAIL,"unchanged win screen times out without repeated Next");
-        check(step(c,22000,true,true,false)==LevelCycle.Action.NONE,"failed cycle sends no further actions");
-        c=new LevelCycle();step(c,0,true,true,false);step(c,500,true,true,false);step(c,1000,true,true,false);c.homeSent(1000*1_000_000L);
-        step(c,4000,false,false,false);
-        check(step(c,17000,false,true,false)==LevelCycle.Action.FAIL,"ad or unreadable return screen is not clicked");
-        recoveryCases();
-        System.out.println("PASS: "+checks+" automatic level-cycle checks");
-    }
+ }
+ static void transientAndStartupMenu(){
+  LevelCycle c=new LevelCycle();step(c,0,true,true,false);step(c,100,false,true,false);check(c.stage()==LevelCycle.Stage.MONITOR,"transient win does not advance");
+  check(step(c,2000,true,false,false)==LevelCycle.Action.NONE,"another app's win text cannot navigate");
+  menu(c,3000);menu(c,3100);menu(c,3400);check(menu(c,3600)==LevelCycle.Action.PLAY_MENU,"starting continuous play from game home can press Play");c.menuSent(3600_000_000L);check(menu(c,6600)==LevelCycle.Action.HOME,"stalled menu Play reopens rather than spamming Play");
+  c.retryAfterError(7000_000_000L);check(c.retryWaiting(),"transient navigation exception preserves active recovery");
+ }
+ public static void main(String[]args){normalAndMenu();unknownRecovery();transientAndStartupMenu();System.out.println("PASS: "+checks+" continuous level-cycle checks");}
 }

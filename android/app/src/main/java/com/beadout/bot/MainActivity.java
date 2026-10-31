@@ -15,12 +15,13 @@ import java.util.*;
 public final class MainActivity extends Activity {
     private TextView status;
     private DetectionView image;
+    private boolean waitingForOverlay;
     private final Runnable update=this::refresh;
     @Override public void onCreate(Bundle state){super.onCreate(state);
         ScrollView scroll=new ScrollView(this);LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);int pad=(int)(20*getResources().getDisplayMetrics().density);body.setPadding(pad,pad,pad,pad);scroll.addView(body);setContentView(scroll);
         TextView title=new TextView(this);title.setText("Bead Pilot");title.setTextSize(28);body.addView(title);
-        TextView instructions=new TextView(this);instructions.setText("Press Start, then switch to Bead Out. The app finds the holding slots, squares, loop and feeder queues itself. Screen images stay in RAM. Floating Start and Pause work while you stay in the game; drag the status area to move the panel.");instructions.setPadding(0,16,0,16);instructions.setTextSize(16);body.addView(instructions);
-        button(body,"Start automatic play",()->{start("auto");Toast.makeText(this,"Switch to Bead Out now",Toast.LENGTH_LONG).show();});
+        TextView instructions=new TextView(this);instructions.setText("Press Start automatic play to show the floating controls. Open Bead Out, then tap Start on the floating panel. It keeps playing across levels until Pause or Stop. Drag the status area to move the panel. Screen images stay in RAM.");instructions.setPadding(0,16,0,16);instructions.setTextSize(16);body.addView(instructions);
+        button(body,"Start automatic play",this::showFloatingControls);
         button(body,"Pause",()->{if(PilotService.active)start("pause");});
         button(body,"Stop",()->stopService(new Intent(this,PilotService.class)));
         status=new TextView(this);status.setTextSize(15);status.setPadding(0,20,0,20);status.setTextIsSelectable(true);body.addView(status);
@@ -31,9 +32,10 @@ public final class MainActivity extends Activity {
         TextView note=new TextView(this);note.setText("Automatic detection is experimental. If the view is unclear, taps pause while the app looks again. Unknown ? squares are obstacles until the game reveals their colors.");note.setTextSize(13);note.setPadding(0,20,0,10);body.addView(note);
         if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},1);
     }
+    private void showFloatingControls(){if(!Settings.canDrawOverlays(this)){waitingForOverlay=true;startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));return;}start("show_controls");Toast.makeText(this,"Open Bead Out and tap floating Start",Toast.LENGTH_LONG).show();}
     private void button(LinearLayout body,String text,Runnable action){Button b=new Button(this);b.setText(text);b.setOnClickListener(v->action.run());body.addView(b);}
     private void start(String action){startForegroundService(new Intent(this,PilotService.class).setAction(action));}
-    @Override protected void onResume(){super.onResume();PilotService.statusObserver=update;refresh();}
+    @Override protected void onResume(){super.onResume();if(waitingForOverlay&&Settings.canDrawOverlays(this)){waitingForOverlay=false;showFloatingControls();}PilotService.statusObserver=update;refresh();}
     @Override protected void onPause(){super.onPause();if(PilotService.statusObserver==update)PilotService.statusObserver=null;}
     private void refresh(){if(status!=null)status.setText(PilotService.status+"\n\nRecent activity (RAM only):\n"+PilotService.recentEvents());if(image!=null){image.requestLayout();image.invalidate();}}
     private final class DetectionView extends View {

@@ -1,3 +1,19 @@
+# Current continuation — v0.12 continuous navigation and floating launch
+
+Latest user instruction overrides the historical Home-before-Next flow: after a win, tap Next, wait 2 seconds, Android Home for 3 seconds, reopen Bead Out, continue a board or tap Play on the game home/menu. If Congrats/Next remains after reopening, reconfirm Next. Keep automatic play enabled across levels until user Pause/Stop. Main app Start automatic play should only open the floating panel; floating Start should start actual continuous automation.
+
+Replaced LevelCycle with acknowledged navigation states. NEXT_PENDING emits only on a confirmed win and nextSent anchors POST_NEXT_WAIT to the actual successful tap. At two seconds it requests system Home; homeSent anchors the full three-second wait to actual Home completion. Reopen returns to board/menu/win recognition; launchSent anchors loading timeout after launch returns. Menu Play also requires acknowledgment. Three Home/two Play attempts per recovery burst lead to a ten-second cooldown and retry, never Action.FAIL. A readable board can interrupt cooldown. Unknown/ad content receives no taps. Returning win screens may reconfirm Next after a new return. Overall slow transition timing also enters cooldown rather than stopping.
+
+AutomaticRootMain handles the new Next/Home timers without unnecessary scene processing, calls acknowledgments only after successful input, catches transient navigation exceptions into retry, and keeps requested/scanning enabled on RESET. It no longer throws on recovery exhaustion. Capture is lazy: no display mirror until floating Start and it closes on Pause; the root watchdog still stops if its controller disappears. Legacy RootMain remains unused by the app, but its Next/Play inputs now acknowledge the updated cycle API.
+
+MainActivity Start automatic play calls showFloatingControls -> service show_controls, never auto. Overlay permission is requested when needed and panel creation resumes after grant. Instructions explain opening Bead Out then tapping floating Start. PilotService show_controls publishes readiness without scheduling input. Floating Start still sends auto immediately, Pause cancels pending starts, Stop ends the service. FLAG_SECURE remains removed.
+
+3,568 host checks passed. LevelCycleTest now has 73 meaningful sequence/property checks (including four simulated minutes aggregated into invariants), replacing 49 historical-order checks; all other domain, palette, geometry and real-frame checks passed. Tests cover exact 2-second Next and 3-second Home timing from acknowledgments, a second level without another Start, returned Next, startup/returned menu Play, failed taps and continuous cooldown recovery without clicking unknown ads or returning FAIL. Build/lint passed. Native win/menu OCR, actual ad behavior, overlay touch and uninterrupted multi-level phone play remain unverified.
+
+APK versionCode 12/versionName 0.12, same signing key as v0.11. Publish APK/source/checksum in downloads/ and use HTTPS GitHub links. Historical descriptions below may describe the superseded navigation order; use this section for the current requirement.
+
+---
+
 # Current continuation — v0.11
 
 User corrected an initially wrong inline screenshot. Correct Level 24 image has gray and white at 50%, empty middle holding slots, and magenta slot markers incorrectly placed on the lower pink/lime/purple/dark-green board row. Logs repeatedly adopt 4 slots/3 squares, then Reading existing fill percentages and Found 3 feeder paths. Do not use the first wrong screenshot as evidence that the fourth slot necessarily deadlocked the game; the corrected image shows brown/lime collectors have left.

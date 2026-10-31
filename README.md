@@ -1,14 +1,18 @@
-# Bead Pilot 0.11 — experimental
+# Bead Pilot 0.12 — experimental
 
-[Download v0.11 APK](https://github.com/vkhoahuynh-droid/bead-pilot/raw/refs/heads/main/downloads/Bead-Pilot-v0.11.apk)
+[Download v0.12 APK](https://github.com/vkhoahuynh-droid/bead-pilot/raw/refs/heads/main/downloads/Bead-Pilot-v0.12.apk)
 
 Editable Android sources are in `android/`; versioned APK/source downloads are in `downloads/`.
 
-**If v0.6 is installed, uninstall Bead Pilot first**, then install v0.11 and grant root again. This removes Bead Pilot settings, not Bead Out progress. v0.11 uses the original v0.5/v0.7/v0.8/v0.9/v0.10 signing certificate; v0.6 used a different certificate. v0.5, v0.7, v0.8, v0.9 and v0.10 can update in place.
+**If v0.6 is installed, uninstall Bead Pilot first**, then install v0.12 and grant root again. This removes Bead Pilot settings, not Bead Out progress. v0.12 uses the original signing certificate (v0.5 and v0.7 onward); v0.6 used a different certificate. v0.5 and v0.7–v0.11 can update in place.
+
+v0.12 runs continuously across levels. A confirmed win now taps **Next first**, waits two seconds after the actual tap, presses **Android Home**, waits three seconds after the Home action, and reopens Bead Out. It resumes a confirmed board, presses recognized **Play** on the game menu, or reconfirms **Next** if the win screen remains. Slow ad/menu transitions cool down and retry instead of terminating the root player. Unknown ad content is never tapped. Pause and Stop cancel further navigation.
+
+The main app's **Start automatic play** button now only shows the floating controls (requesting overlay permission if needed). Open Bead Out and use **floating Start** to begin automatic play. Capture is created only when Start is actually pressed and released on Pause; opening the panel alone does not start capture or input.
 
 v0.11 fixes holding-row misidentification: a row of board cups could previously replace the four real holding slots and leave only three detected board squares, followed by endless percentage rereads. Detection now checks proximity to the observed loop exit, uses regular spacing with visible material confirmation, and retains established tray anchors while they remain visible. A matching existing row is checked before fresh row discovery. Temporary geometry failures withhold taps without discarding collector state; confirmed level navigation or an explicit Start still initializes a new model. Startup OCR can combine partial percentage reads across requests, with per-slot color checks. Motion recalibration preserves tracked fills.
 
-The floating **Start / Pause / Stop** panel remains draggable by its status area. Floating Start is immediate; the main app's Start allows five seconds to switch to Bead Out. Pause cancels pending starts. Bead Pilot no longer sets FLAG_SECURE on its own floating window, removing the app's recording-blocking setting. Pixels and temporary OCR images remain in RAM; OCR reads visible percentage glyphs, not the game's internal variables.
+The floating **Start / Pause / Stop** panel remains draggable by its status area. Floating Start is immediate; the main app's Start only opens the panel. Pause cancels pending starts. Bead Pilot no longer sets FLAG_SECURE on its own floating window, removing the app's recording-blocking setting. Pixels and temporary OCR images remain in RAM; OCR reads visible percentage glyphs, not the game's internal variables.
 
 v0.9 fixes a reproduced planner freeze: an estimated bead shortage for one already active collector no longer vetoes unrelated new collectors. Automatic play evaluates the new choice's visible support instead of requiring perfect inventory for all existing colors. After six seconds without tracked collection progress it may add a partial but bead-backed third color, leaving a spare slot; that recovery cannot occupy the fourth slot. The fourth-slot completion guard, unknown-color exclusion and duplicate-collector restriction remain. Queue order and access-unlock scores still guide bounded lookahead. Search width/depth scale with board size, no-action results are retried, and live choices are evaluated before expensive waiting forecasts.
 
@@ -20,9 +24,10 @@ It also addresses a general source of the reported feeder-path failure: dark gra
 
 Automatic rooted Android player for Bead Out. Supports KernelSU Next through `su`.
 
-1. Install the APK from the Releases page and grant root.
-2. Tap **Start automatic play**, then switch to Bead Out within five seconds.
-3. Use **Pause**, notification **Stop**, or the optional floating **STOP** to interrupt.
+1. Install the APK and open Bead Pilot.
+2. Tap **Start automatic play** to show the floating controls; allow overlay/root permission if prompted.
+3. Open Bead Out and tap **Start** on the floating panel.
+4. Use floating **Pause** to suspend or **Stop** to end the service.
 
 No tracing, coordinate entry, or teaching is required. **Show detected board** is an optional preview of the last discovered layout.
 
@@ -30,7 +35,7 @@ The app detects four holding slots, changing square layouts, the loop and both f
 
 The detector uses the observed inner rail outline to distinguish real shape changes from bead movement. Supported loops use a measured offset from that outline or a validated skeleton for concave geometry. Initial discovery still needs visible bead support. An already observed, emptied loop can retain its own path while its closed rail remains visible. Feeders must be observed or have their missing tails visibly empty; unknown occlusion does not qualify. Geometry is checked periodically (about 1.5 seconds) and taps pause on failure or changed geometry. New geometry needs two consistent observations. No manual calibration is required.
 
-After a confirmed win it presses Android Home, waits three seconds, reopens Bead Out and taps Next. It uses bounded Home/reopen recovery after ads, and recognizes the game menu to press Play. Persistent recognition or input failure pauses/stops instead of repeatedly tapping.
+After a confirmed win: **Next → wait 2 seconds → Android Home → wait 3 seconds → reopen Bead Out**. A recognized board resumes automatically; a recognized game menu gets Play. A returned win screen may reconfirm Next. Each recovery burst is bounded, then uses a ten-second cooldown and retries while automatic mode stays enabled. Transient navigation errors enter recovery instead of ending the service. The root/control watchdog still stops input if its controller is lost.
 
 ## Capture and efficiency
 
@@ -42,7 +47,7 @@ Planning is bounded to 60 ms per search, at most twice per second. Performance, 
 
 ## Validation and limitations
 
-3,544 host checks passed: planner/search 1,220, finite feeders 1,607, level recovery 49, gameplay model 76, legacy perception/tracking 51, automatic interpretation 39, adaptive palette 39, generated adaptive layouts 338, actual-frame detection/motion 105; observed-planner recovery 20. Actual frames include the changing square count, all 19 half-second frames through motion/refill, and recovery from an unreadable slot animation. Generated fixtures cover varied border colors, oval/rectangular/concave/triangular loops, gray feeders on beige, shaded white cups, changed feeder routes, blockers, unknowns, empty loops, and obscured queues. Palette tests use 2, 5 and 18 colors, new color additions, ID retention and relearning fewer colors. New row tests cover empty, partially occupied gray/white and fully occupied trays, plus rejection of a lower board row when the real tray is absent. Partial OCR and motion-reset tests preserve capacities and reject stale percentages after a color change. New planner cases reproduce two active 50% collectors with missing estimated supply, test a supported new collector, partial third-slot stall recovery, spare-slot protection, separate cyan/royal-blue accounting, and longer queue dependencies on 15/30/60-position boards. Replay checks require the four visibly different collectors to remain distinct.
+3,568 host checks passed: planner/search 1,220, finite feeders 1,607, continuous level recovery 73, gameplay model 76, legacy perception/tracking 51, automatic interpretation 39, adaptive palette 39, generated adaptive layouts 338, actual-frame detection/motion 105; observed-planner recovery 20. Actual frames include the changing square count, all 19 half-second frames through motion/refill, and recovery from an unreadable slot animation. Generated fixtures cover varied border colors, oval/rectangular/concave/triangular loops, gray feeders on beige, shaded white cups, changed feeder routes, blockers, unknowns, empty loops, and obscured queues. Palette tests use 2, 5 and 18 colors, new color additions, ID retention and relearning fewer colors. New row tests cover empty, partially occupied gray/white and fully occupied trays, plus rejection of a lower board row when the real tray is absent. Partial OCR and motion-reset tests preserve capacities and reject stale percentages after a color change. New planner cases reproduce two active 50% collectors with missing estimated supply, test a supported new collector, partial third-slot stall recovery, spare-slot protection, separate cyan/royal-blue accounting, and longer queue dependencies on 15/30/60-position boards. Replay checks require the four visibly different collectors to remain distinct. Navigation checks cover the exact acknowledged 2/3-second delays, two consecutive levels without another Start, returned Next, menu Play, failed input acknowledgment and four simulated minutes of unknown-ad recovery without ad taps or terminating automatic mode.
 
 Build, lint and APK signature checks passed. These are host checks, not a complete phone autoplay test. The supplied clip has no completed collector, win or ad transition. Native phone OCR, input/capture compatibility, arbitrary level layouts, memory/battery use and full autonomous completion remain unvalidated. Border/track heuristics can still fail on new graphics; the live status is intended to make failures diagnosable. Hidden square colors are never guessed.
 

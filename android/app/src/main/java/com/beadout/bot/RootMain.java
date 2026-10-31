@@ -163,14 +163,14 @@ public final class RootMain {
                             if(!game||!config.packageName.equals(foreground()))throw new IOException("Game lost focus before Next Level");
                             if(input==null)input=new Input();
                             if(!playing||stopped)continue;
-                            input.tap(config.nextMarker.x*capture.physicalWidth,config.nextMarker.y*capture.physicalHeight);
+                            input.tap(config.nextMarker.x*capture.physicalWidth,config.nextMarker.y*capture.physicalHeight);cycle.nextSent(System.nanoTime());
                             emit("status","Next Level tapped once; waiting for a readable new board.");
                         }else if(action==LevelCycle.Action.PLAY_MENU){
                             if(!playing||stopped)continue;
                             if(config.menuMarker==null||config.menuPlayMarker==null||!game||!config.packageName.equals(foreground()))throw new IOException("Cannot confirm Bead Out menu before Play");
                             if(input==null)input=new Input();
                             if(!playing||stopped)continue;
-                            input.tap(config.menuPlayMarker.x*capture.physicalWidth,config.menuPlayMarker.y*capture.physicalHeight);
+                            input.tap(config.menuPlayMarker.x*capture.physicalWidth,config.menuPlayMarker.y*capture.physicalHeight);cycle.menuSent(System.nanoTime());
                             emit("status","Bead Out Home menu recognized. Play tapped once; waiting for the level.");
                         }else if(action==LevelCycle.Action.RESET){
                             tracker=new Tracker(config.interval);lastState=null;cachedPlan=null;plannedKey="";expectedBoard=null;

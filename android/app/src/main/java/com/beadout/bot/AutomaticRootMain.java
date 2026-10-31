@@ -105,15 +105,20 @@ public final class AutomaticRootMain {
         for(int i=0;i<4;i++)if(r.request.colors[i]==o.slots[i]&&r.request.generations[i]==slotGeneration[i])o.progress[i]=numbers[i];
     }
     private void run()throws Exception{
-        emit("ready","Root connected. Press Start automatic play and open Bead Out.");
-        try(Capture capture=new Capture()){
+        emit("ready","Root connected. Open Bead Out and tap Start on the floating controls.");
+        Capture capture=null;
+        try{
             while(!stopped){long now=System.nanoTime();if(now-heartbeat>8_000_000_000L)throw new IOException("Controller heartbeat lost");
                 if(preview){preview=false;sendPreview();}
                 if(reset){reset=false;resetModel();cycle=new LevelCycle();latest.set(null);latestFull.set(null);lastFull=0;failedTaps=0;blockedTaps.clear();}
-                if(!scanning){cycle=new LevelCycle();Thread.sleep(100);continue;}
+                if(!scanning){cycle=new LevelCycle();if(capture!=null){capture.close();capture=null;}Thread.sleep(100);continue;}
+                if(capture==null)capture=new Capture();
                 long token=controlVersion.get();
-                if(cycle.homeWaiting()){
-                    if(cycle.update(now,false,false,false)==LevelCycle.Action.LAUNCH&&requested)launchGame(token);
+                if(cycle.timerWaiting()){
+                    LevelCycle.Action timer=cycle.update(now,false,false,false);
+                    try{if(timer==LevelCycle.Action.HOME&&pressHome(token)){cycle.homeSent(System.nanoTime());status(now,"Android Home for three seconds");}
+                        else if(timer==LevelCycle.Action.LAUNCH&&requested){launchGame(token);cycle.launchSent(System.nanoTime());status(now,"Reopened Bead Out; checking for a board, Next, or Play");}
+                    }catch(Exception e){cycle.retryAfterError(System.nanoTime());status(now,"Transition retry pending: "+e.getMessage());}
                     Thread.sleep(50);continue;
                 }
                 capture.verifyGeometry();Capture.Frame frame=capture.next();now=System.nanoTime();
@@ -129,11 +134,13 @@ public final class AutomaticRootMain {
                     if(!win&&!menu&&game)try{found=detector.detect(frame);}catch(IllegalStateException ignored){}
                     boolean ready=found!=null;
                     LevelCycle.Action action=cycle.update(now,win,game,ready,menu);
-                    if(action==LevelCycle.Action.HOME){if(pressHome(token)){cycle.homeSent(System.nanoTime());status(now,"Android Home for three seconds");}}
-                    else if(action==LevelCycle.Action.NEXT){if(text!=null&&game&&tap(token,text.scene.next,frame,capture))status(now,"Next tapped. Watching for the new board or an ad.");}
-                    else if(action==LevelCycle.Action.PLAY_MENU){if(text!=null&&game&&tap(token,text.scene.play,frame,capture))status(now,"Game menu recognized. Play tapped.");}
-                    else if(action==LevelCycle.Action.RESET){resetModel();if(found!=null)apply(found,frame,focus);status(now,"New board detected. Resuming automatically.");}
-                    else if(action==LevelCycle.Action.FAIL)throw new IOException("Could not recover the game after bounded Home/reopen attempts");
+                    try{
+                        if(action==LevelCycle.Action.HOME){if(pressHome(token)){cycle.homeSent(System.nanoTime());status(now,"Android Home for three seconds");}}
+                        else if(action==LevelCycle.Action.NEXT){if(text!=null&&game&&tap(token,text.scene.next,frame,capture)){cycle.nextSent(System.nanoTime());status(now,"Next tapped; waiting two seconds before Android Home");}}
+                        else if(action==LevelCycle.Action.PLAY_MENU){if(text!=null&&game&&tap(token,text.scene.play,frame,capture)){cycle.menuSent(System.nanoTime());status(now,"Game menu recognized. Play tapped; automatic play remains on.");}}
+                        else if(action==LevelCycle.Action.RESET){resetModel();if(found!=null)apply(found,frame,focus);status(now,"New board detected. Continuous automatic play resumes.");}
+                        if(cycle.retryWaiting())status(now,"Transition taking longer; automatic play stays on and retries after a cooldown");
+                    }catch(Exception e){cycle.retryAfterError(System.nanoTime());status(now,"Transition retry pending: "+e.getMessage());}
                     if(cycle.transitioning()||action==LevelCycle.Action.RESET){Thread.sleep(250);continue;}
                 }
                 if(!gamePackage.isEmpty()&&!game){status(now,"Game is not in the foreground; taps paused");Thread.sleep(250);continue;}
@@ -204,7 +211,7 @@ public final class AutomaticRootMain {
                 }
                 Thread.sleep(250);
             }
-        }
+        }finally{if(capture!=null)capture.close();}
     }
     private static int eligible(Planner.State state){int n=0;for(int c:state.board)if(c>=0)n++;return n;}
     private String collectorStatus(Planner.State state){int[]visible=state.supply(config.palette.size());StringBuilder b=new StringBuilder("Fill");

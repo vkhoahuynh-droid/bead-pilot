@@ -50,7 +50,7 @@ public final class PilotService extends Service {
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,PilotService.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE);
         notification=new Notification.Builder(this,"pilot").setContentTitle("Bead Pilot")
-            .setContentText("Automatic player active. Open for status; Stop ends capture and input.")
+            .setContentText("Floating controls ready. Open Bead Out and tap Start.")
             .setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(open).setOngoing(true)
             .addAction(new Notification.Action.Builder(null,"Stop",stop).build());
         startForeground(1,notification.build());showOverlay();
@@ -113,7 +113,8 @@ public final class PilotService extends Service {
             if(scheduledAction!=null)handler.removeCallbacks(scheduledAction);
             scheduledAction=null;
         }
-        if("auto".equals(action)||"preview".equals(action)){
+        if("show_controls".equals(action)){cancelScheduled();publish(overlay!=null?"Floating controls ready. Open Bead Out, then tap floating Start.":"Allow floating controls, then press Start automatic play again.");}
+        else if("auto".equals(action)||"preview".equals(action)){
             scheduleAutomatic("auto".equals(action)?"auto":"inspect",5000);
         }else if("snapshot".equals(action))send("snapshot");
         else if("capture".equals(action)){
