@@ -62,7 +62,7 @@ public final class AutoLayout {
         byte[]mask=new byte[g.n];
         for(int y=(int)(g.h*.055);y<bottom;y++)for(int x=0;x<g.w;x++){int i=y*g.w+x;if(g.lum[i]<g.bgLum-35||g.color(i))mask[i]=1;}
         mask=close(mask,g.w,g.h);
-        Loop geometry=findLoop(g,mask,bottom);
+        Loop geometry=findLoop(g,mask,bottom,previous);
         ArrayList<float[]>loop=geometry.points;
         double width=geometry.width;
         Config c=new Config();c.clearLevelGeometry();c.automatic=true;c.rowUnit=5;c.requireBorder=true;c.backgroundKnown=true;c.backgroundRgb=g.bg;c.confirmed=true;
@@ -72,7 +72,7 @@ public final class AutoLayout {
             int color=b.empty?g.rgb[g.at(b.x,b.y)]:mixWhite(g.bg,.45);c.emptySlotRgb[i]=color;c.emptySlotKnown[i]=true;
         }
         c.slotLift=slotWidth*.4/g.h;
-        ArrayList<float[]>normalized=normalize(loop,g.w,g.h);c.lanes.add(normalized);
+        ArrayList<float[]>normalized=normalize(loop,g.w,g.h);c.lanes.add(normalized);c.trackOutline.addAll(normalize(geometry.outline,g.w,g.h));
         byte[]beads=new byte[g.n];for(int y=(int)(g.h*.055);y<bottom;y++)for(int x=0;x<g.w;x++){int i=y*g.w+x;if(g.color(i))beads[i]=1;}
         beads=close(beads,g.w,g.h);
         ArrayList<Double>pitches=new ArrayList<>();
@@ -88,6 +88,11 @@ public final class AutoLayout {
         for(Region body:bodies.regions){
             if(body.area<g.w*g.w*.008)continue;
             byte[]shape=new byte[g.n];for(int i=0;i<g.n;i++)if(bodies.labels[i]==body.id)shape[i]=1;
+            shape=morph(morph(morph(morph(shape,g.w,g.h,true),g.w,g.h,true),g.w,g.h,false),g.w,g.h,false);
+            shape=fillHoles(shape,g.w,g.h);
+            int smoothing=Math.max(2,(int)Math.round(slotWidth*.1));
+            for(int i=0;i<smoothing;i++)shape=morph(shape,g.w,g.h,false);
+            for(int i=0;i<smoothing;i++)shape=morph(shape,g.w,g.h,true);
             byte[]sk=thin(shape,g.w,g.h);int toe=-1;double toeD=Double.POSITIVE_INFINITY,join=0;
             for(int i=0;i<g.n;i++)if(sk[i]!=0){
                 double[]near=loopPath.nearest((i%g.w)/(float)g.w,(i/g.w)/(float)g.h);
@@ -95,7 +100,7 @@ public final class AutoLayout {
             }
             // A queue must actually approach this loop; unrelated UI is ignored.
             if(toe<0||toeD>width*2)continue;
-            ArrayList<float[]>route=longestRoute(sk,g.w,g.h,toe);
+            ArrayList<float[]>route=feederRoute(shape,sk,g.w,g.h,toe,slotWidth);
             if(route.size()<slotWidth)throw new IllegalStateException("Queue centerline is incomplete");
             route=smoothOpen(route,2);
             ArrayList<float[]>feed=new ArrayList<>();float[]junction=loopPath.point(join);
@@ -111,7 +116,7 @@ public final class AutoLayout {
             for(Config.FeedPath old:previous.feeders){
                 int match=-1;for(int i=0;i<feeds.size();i++){
                     Config.FeedPath f=feeds.get(i);
-                    if(Math.hypot((f.points.get(0)[0]-old.points.get(0)[0])*g.w,(f.points.get(0)[1]-old.points.get(0)[1])*g.h)<g.w*.03&&nearPath(f.points,old.points,false,g.w,g.h))match=i;
+                    if(feedOverlap(f,old,g.w,g.h))match=i;
                 }
                 if(emptyTail(g,old,match<0?null:feeds.get(match),width)){
                     if(match<0)feeds.add(old);else feeds.set(match,old);
@@ -130,8 +135,15 @@ public final class AutoLayout {
     public void refreshSquares(Capture.Frame f,Config c){Grid g=new Grid(f);double y=0;for(float[]p:c.slots)y+=p[1]*g.h/4;refreshSquares(g,c,y);}
     private static void refreshSquares(Grid g,Config c,double slotY){
         byte[]m=new byte[g.n];for(int y=(int)(slotY+g.w*.055);y<g.h*.9;y++)for(int x=0;x<g.w;x++){int i=y*g.w+x;if((g.sat[i]>110&&g.value[i]>90)||(g.lum[i]>g.bgLum+18&&g.sat[i]<50)||(g.sat[i]<110&&g.value[i]<180&&g.lum[i]<g.bgLum-45))m[i]=1;}
-        m=thickClasses(colorClasses(g,m),g.w,g.h,Math.max(1,(int)Math.round(g.w*.012)));Components cc=components(m,g.w,g.h,true,true);ArrayList<Region>boxes=new ArrayList<>();
-        for(Region r:cc.regions)if(r.w>=g.w*.055&&r.w<=g.w*.20&&r.h>=g.w*.045&&r.h<=g.w*.25&&r.area>(double)r.w*r.h*.3)boxes.add(r);
+        byte[]classes=colorClasses(g,m);ArrayList<Region>boxes=new ArrayList<>();
+        // Preserve complete cup rims/shading. Opening is only a way to separate
+        // a cup connected to a long same-color wall, not a replacement for its
+        // original raised footprint.
+        for(Region r:components(classes,g.w,g.h,true,true).regions)if(isBox(g,r))boxes.add(r);
+        for(Region r:components(thickClasses(classes,g.w,g.h,Math.max(1,(int)Math.round(g.w*.012))),g.w,g.h,true,true).regions)if(isBox(g,r)){
+            boolean overlaps=false;for(Region old:boxes)if(Math.abs(old.cx()-r.cx())<Math.max(old.w,r.w)*.5&&Math.abs(old.cy()-r.cy())<Math.max(old.h,r.h)*.5)overlaps=true;
+            if(!overlaps)boxes.add(r);
+        }
         boxes.sort(Comparator.comparingInt((Region r)->Math.round(r.y/(float)(g.w*.06))).thenComparingInt(r->r.x));
         c.buttons.clear();c.clickable=new boolean[boxes.size()];c.unknownBoxes=new boolean[boxes.size()];c.unlockValues=new int[boxes.size()];
         byte[]walls=wallMask(g,boxes,slotY);
@@ -145,6 +157,7 @@ public final class AutoLayout {
         }
         for(int i=0;i<boxes.size();i++)if(c.clickable[i])for(int j=0;j<boxes.size();j++)if(i!=j&&!c.clickable[j]&&escape(g,walls,boxes,j,i,slotY))c.unlockValues[i]+=c.unknownBoxes[j]?2:1;
     }
+    private static boolean isBox(Grid g,Region r){return r.w>=g.w*.055&&r.w<=g.w*.20&&r.h>=g.w*.045&&r.h<=g.w*.25&&r.area>(double)r.w*r.h*.3;}
     private static ArrayList<Box>slotCandidates(Grid g){
         byte[]bright=new byte[g.n],colored=new byte[g.n];
         for(int y=(int)(g.h*.30);y<g.h*.86;y++)for(int x=0;x<g.w;x++){
@@ -171,9 +184,9 @@ public final class AutoLayout {
         }out.sort(Comparator.comparingDouble(q->q.get(0).y));return out;
     }
     private static final class Loop {
-        byte[]inside;ArrayList<float[]>points;double width;
+        byte[]inside;ArrayList<float[]>points,outline;double width;
     }
-    private static Loop findLoop(Grid g,byte[]mask,int bottom){
+    private static Loop findLoop(Grid g,byte[]mask,int bottom,Config previous){
         byte[]inverse=new byte[g.n];for(int i=0;i<g.n;i++)inverse[i]=(byte)(1-mask[i]);
         Components holes=components(inverse,g.w,g.h,false);
         ArrayList<Region>candidates=new ArrayList<>();
@@ -183,6 +196,10 @@ public final class AutoLayout {
             byte[]inside=new byte[g.n];for(int i=0;i<g.n;i++)if(holes.labels[i]==hole.id)inside[i]=1;
             ArrayList<float[]>boundary=smooth(contour(inside,g.w,g.h),3);
             if(boundary.size()<40)continue;ensureClockwise(boundary);
+            if(previous!=null&&!previous.trackOutline.isEmpty()&&nearPath(normalize(boundary,g.w,g.h),previous.trackOutline,true,g.w,g.h)&&nearPath(previous.trackOutline,normalize(boundary,g.w,g.h),true,g.w,g.h)){
+                ArrayList<float[]>observed=new ArrayList<>();for(float[]p:previous.lanes.get(0))observed.add(new float[]{p[0]*g.w,p[1]*g.h});
+                if(onBand(g,observed)){Loop retained=new Loop();retained.inside=inside;retained.outline=boundary;retained.points=observed;retained.width=previous.pitch*2.5;return retained;}
+            }
             ArrayList<Double>widths=new ArrayList<>();int supported=0;
             for(int i=0;i<boundary.size();i++){
                 float[]p=boundary.get(i),a=boundary.get((i+boundary.size()-6)%boundary.size()),b=boundary.get((i+6)%boundary.size());
@@ -196,14 +213,42 @@ public final class AutoLayout {
                 }
                 if(first>=0&&last-first>g.w*.018&&last-first<g.w*.14){widths.add((double)(last-first));supported++;}
             }
-            if(supported<boundary.size()*.75)continue;
-            ArrayList<float[]>loop=skeletonLoop(g,inside,bottom);
+            if(supported<boundary.size()*.55)continue;
+            ArrayList<float[]>loop=offsetLoop(g,boundary);
+            if(loop==null||!simple(loop)||!onBand(g,loop))loop=skeletonLoop(g,inside,bottom);
             if(loop==null)continue;
             loop=smooth(loop,2);ensureClockwise(loop);rotateToPickup(loop,hole.cx());
             if(!simple(loop)||!onBand(g,loop))continue;
-            Loop result=new Loop();result.inside=inside;result.points=loop;result.width=median(widths);return result;
+            Loop result=new Loop();result.inside=inside;result.outline=boundary;result.points=loop;result.width=median(widths);return result;
         }
         throw new IllegalStateException("Waiting for a supported, closed loop outline");
+    }
+    // Real beads have shaded seams and gaps: their color skeleton need not be
+    // closed even though the neutral rail is. Offset the observed closed inner
+    // rail using measured local bead-band centers; reject unsupported crossings.
+    private static ArrayList<float[]>offsetLoop(Grid g,ArrayList<float[]>boundary){
+        double[]offset=new double[boundary.size()];Arrays.fill(offset,Double.NaN);
+        ArrayList<Double>valid=new ArrayList<>(),widths=new ArrayList<>();
+        for(int i=0;i<boundary.size();i++){
+            float[]p=boundary.get(i),a=boundary.get((i+boundary.size()-6)%boundary.size()),b=boundary.get((i+6)%boundary.size());
+            double dx=b[0]-a[0],dy=b[1]-a[1],norm=Math.hypot(dx,dy);if(norm<.1)continue;
+            int first=-1,last=-1,gap=0;
+            for(int t=1;t<g.w*.3;t++){
+                double x=p[0]+dy/norm*t,y=p[1]-dx/norm*t;
+                boolean color=x>=0&&x<g.w&&y>=0&&y<g.h&&g.color(g.at(x,y));
+                if(color){if(first<0)first=t;last=t;gap=0;}else if(first>=0&&++gap>1)break;
+            }
+            if(first>=0&&last-first>g.w*.022&&last-first<g.w*.18){offset[i]=(first+last)/2.0;valid.add(offset[i]);widths.add((double)(last-first));}
+        }
+        if(valid.size()<boundary.size()*.55)return null;
+        double center=median(valid),width=median(widths);ArrayList<float[]>loop=new ArrayList<>();
+        for(int i=0;i<boundary.size();i++){
+            float[]p=boundary.get(i),a=boundary.get((i+boundary.size()-6)%boundary.size()),b=boundary.get((i+6)%boundary.size());
+            double dx=b[0]-a[0],dy=b[1]-a[1],norm=Math.max(.1,Math.hypot(dx,dy));
+            double d=Double.isFinite(offset[i])&&Math.abs(offset[i]-center)<width*.4?offset[i]:center;
+            loop.add(new float[]{(float)(p[0]+dy/norm*d),(float)(p[1]-dx/norm*d)});
+        }
+        return smooth(loop,3);
     }
     // An observed ring's skeleton is a cycle even when it is non-convex. Peel
     // open branches instead of offsetting normals through a concave corner.
@@ -259,7 +304,7 @@ public final class AutoLayout {
     }
     private static boolean onBand(Grid g,List<float[]>loop){
         int supported=0;for(float[]p:loop){int x=Math.round(p[0]),y=Math.round(p[1]);boolean found=false;
-            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)if(x+dx>=0&&x+dx<g.w&&y+dy>=0&&y+dy<g.h&&g.color((y+dy)*g.w+x+dx))found=true;
+            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)if(x+dx>=0&&x+dx<g.w&&y+dy>=0&&y+dy<g.h&&(g.color((y+dy)*g.w+x+dx)||g.lum[(y+dy)*g.w+x+dx]<g.bgLum-25))found=true;
             if(found)supported++;
         }return supported>=loop.size()*.9;
     }
@@ -284,6 +329,25 @@ public final class AutoLayout {
             byte tag=core[y*w+x];for(int dy=-radius;dy<=radius;dy++)for(int dx=-radius;dx<=radius;dx++)if(m[(y+dy)*w+x+dx]==tag)out[(y+dy)*w+x+dx]=tag;
         }return out;
     }
+    private static byte[]fillHoles(byte[]shape,int w,int h){
+        byte[]outside=new byte[shape.length];int[]q=new int[shape.length];int head=0,tail=0;
+        for(int i=0;i<shape.length;i++)if((i<w||i>=shape.length-w||i%w==0||i%w==w-1)&&shape[i]==0){outside[i]=1;q[tail++]=i;}
+        while(head<tail){int at=q[head++],x=at%w,y=at/w;for(int d=0;d<4;d++){int xx=x+(d==0?-1:d==1?1:0),yy=y+(d==2?-1:d==3?1:0);if(xx<0||xx>=w||yy<0||yy>=h)continue;int k=yy*w+xx;if(shape[k]==0&&outside[k]==0){outside[k]=1;q[tail++]=k;}}}
+        byte[]filled=shape.clone();for(int i=0;i<filled.length;i++)if(outside[i]==0)filled[i]=1;return filled;
+    }
+    private static ArrayList<float[]>feederRoute(byte[]body,byte[]skeleton,int w,int h,int toe,double width){
+        // Find the remote end in the filled queue body, not a texture spur on
+        // its skeleton. Bead seams can make a longer branch run down an edge.
+        int[]distance=new int[body.length],q=new int[body.length];Arrays.fill(distance,-1);int head=0,tail=0,max=0;q[tail++]=toe;distance[toe]=0;
+        while(head<tail){int at=q[head++],x=at%w,y=at/w;max=Math.max(max,distance[at]);
+            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int xx=x+dx,yy=y+dy;if(xx<0||xx>=w||yy<0||yy>=h)continue;int k=yy*w+xx;if(body[k]!=0&&distance[k]<0){distance[k]=distance[at]+1;q[tail++]=k;}}
+        }
+        double x=0,y=0,count=0;for(int i=0;i<body.length;i++)if(distance[i]>=max-width*.4){x+=i%w;y+=i/w;count++;}
+        if(count==0)return longestRoute(skeleton,w,h,toe);x/=count;y/=count;
+        int end=-1;double nearest=Double.POSITIVE_INFINITY;
+        for(int i=0;i<skeleton.length;i++)if(skeleton[i]!=0&&distance[i]>=0){double d=Math.hypot(i%w-x,i/w-y);if(d<nearest){nearest=d;end=i;}}
+        return end<0?new ArrayList<>():route(skeleton,w,h,toe,end);
+    }
     private static ArrayList<float[]>longestRoute(byte[]m,int w,int h,int start){
         int[]distance=new int[m.length],q=new int[m.length];Arrays.fill(distance,-1);int head=0,tail=0,end=start;q[tail++]=start;distance[start]=0;
         while(head<tail){int i=q[head++],x=i%w,y=i/w;end=i;
@@ -304,27 +368,39 @@ public final class AutoLayout {
     private static boolean sameLoop(Config a,Config b,int w,int h){
         if(a.lanes.size()!=1||b.lanes.size()!=1)return false;
         for(int i=0;i<4;i++)if(Math.hypot((a.slots.get(i)[0]-b.slots.get(i)[0])*w,(a.slots.get(i)[1]-b.slots.get(i)[1])*h)>w*.015)return false;
-        return nearPath(a.lanes.get(0),b.lanes.get(0),true,w,h)&&nearPath(b.lanes.get(0),a.lanes.get(0),true,w,h);
+        List<float[]>pa=a.trackOutline.isEmpty()?a.lanes.get(0):a.trackOutline,pb=b.trackOutline.isEmpty()?b.lanes.get(0):b.trackOutline;
+        return nearPath(pa,pb,true,w,h)&&nearPath(pb,pa,true,w,h);
     }
     private static boolean nearFeeds(Config a,Config b,int w,int h){
         for(Config.FeedPath f:a.feeders){boolean matched=false;
-            for(Config.FeedPath g:b.feeders)if(Math.hypot((f.points.get(0)[0]-g.points.get(0)[0])*w,(f.points.get(0)[1]-g.points.get(0)[1])*h)<w*.03&&nearPath(f.points,g.points,false,w,h))matched=true;
+            for(Config.FeedPath g:b.feeders)if(feedOverlap(f,g,w,h))matched=true;
             if(!matched)return false;
         }return true;
+    }
+    private static boolean feedOverlap(Config.FeedPath a,Config.FeedPath b,int w,int h){
+        PathGeometry p=new PathGeometry(a.points,false,w,h),q=new PathGeometry(b.points,false,w,h);
+        if(p.length>q.length){PathGeometry swap=p;p=q;q=swap;}
+        double start=p.distances[1]+w*.04;if(start>=p.length)return false;int supported=0;
+        for(int i=0;i<24;i++){float[]point=p.point(start+(p.length-start)*i/23);if(q.nearest(point[0],point[1])[1]<w*.045)supported++;}
+        return supported>=22;
     }
     private static boolean emptyTail(Grid g,Config.FeedPath old,Config.FeedPath visible,double width){
         PathGeometry path=new PathGeometry(old.points,false,g.w,g.h);
         PathGeometry current=visible==null?null:new PathGeometry(visible.points,false,g.w,g.h);
         int empty=0,total=0;double start=path.distances[1]+width;
         for(double along=start;along<path.length;along+=2){
-            float[]p=path.point(along);if(current!=null&&current.nearest(p[0],p[1])[1]<g.w*.018)continue;
+            float[]p=path.point(along);if(current!=null&&current.nearest(p[0],p[1])[1]<g.w*.035)continue;
             int c=g.rgb[g.at(p[0]*g.w,p[1]*g.h)];int dr=((c>>16)&255)-((g.bg>>16)&255),dg=((c>>8)&255)-((g.bg>>8)&255),db=(c&255)-(g.bg&255);
-            total++;if(dr*dr+dg*dg+db*db<26*26)empty++;
-        }return total>=12&&empty>=total*.95;
+            int max=Math.max((c>>16)&255,Math.max((c>>8)&255,c&255)),bm=Math.max((g.bg>>16)&255,Math.max((g.bg>>8)&255,g.bg&255));
+            int chroma=Math.abs(((c>>16)&255)*255/Math.max(1,max)-((g.bg>>16)&255)*255/bm)+Math.abs(((c>>8)&255)*255/Math.max(1,max)-((g.bg>>8)&255)*255/bm)+Math.abs((c&255)*255/Math.max(1,max)-(g.bg&255)*255/bm);
+            boolean rail=g.sat[g.at(p[0]*g.w,p[1]*g.h)]<110&&chroma<55&&max>bm*.4&&max<bm*.9;
+            total++;if(dr*dr+dg*dg+db*db<26*26||rail)empty++;
+        }return total>=3&&empty>=total*.95;
     }
-    private static boolean nearPath(List<float[]>a,List<float[]>b,boolean closed,int w,int h){
+    private static boolean nearPath(List<float[]>a,List<float[]>b,boolean closed,int w,int h){return nearPath(a,b,closed,w,h,w*.018);}
+    private static boolean nearPath(List<float[]>a,List<float[]>b,boolean closed,int w,int h,double tolerance){
         PathGeometry p=new PathGeometry(a,closed,w,h),q=new PathGeometry(b,closed,w,h);
-        for(int i=0;i<32;i++){float[]point=p.point(i*p.length/(closed?32:31));if(q.nearest(point[0],point[1])[1]>w*.018)return false;}return true;
+        for(int i=0;i<32;i++){float[]point=p.point(i*p.length/(closed?32:31));if(q.nearest(point[0],point[1])[1]>tolerance)return false;}return true;
     }
     private static int mixWhite(int c,double a){int r=(int)(((c>>16)&255)*(1-a)+255*a),g=(int)(((c>>8)&255)*(1-a)+255*a),b=(int)((c&255)*(1-a)+255*a);return 0xff000000|r<<16|g<<8|b;}
     private static double measurePitch(Capture.Frame f,double x,double y,double boxWidth){
@@ -366,7 +442,7 @@ public final class AutoLayout {
             int dr=((c>>16)&255)-((g.bg>>16)&255),dg=((c>>8)&255)-((g.bg>>8)&255),db=(c&255)-(g.bg&255);
             if(dr*dr+dg*dg+db*db>26*26)wall[i]=1;
         }
-        for(Region r:boxes)for(int y=Math.max(0,r.y-1);y<Math.min(g.h,r.y+r.h+1);y++)for(int x=Math.max(0,r.x-1);x<Math.min(g.w,r.x+r.w+1);x++)wall[y*g.w+x]=0;
+        for(Region r:boxes){int pad=Math.max(2,(int)Math.round(r.w*.07));for(int y=Math.max(0,r.y-pad);y<Math.min(g.h,r.y+r.h+pad);y++)for(int x=Math.max(0,r.x-pad);x<Math.min(g.w,r.x+r.w+pad);x++)wall[y*g.w+x]=0;}
         return wall;
     }
     private static boolean escape(Grid g,byte[]walls,List<Region>boxes,int candidate,int removed,double slotY){

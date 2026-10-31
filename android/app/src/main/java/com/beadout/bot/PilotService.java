@@ -29,6 +29,16 @@ public final class PilotService extends Service {
     private TextView overlayStatus;
     private volatile boolean closing;
     private OcrReader ocr;
+    private Notification.Builder notification;
+    private volatile JSONObject deferredMode;
+    private static final java.util.ArrayDeque<String> events=new java.util.ArrayDeque<>();
+    public static synchronized String recentEvents(){return String.join("\n",events);}
+    private static synchronized void remember(String value){
+        String item=value.length()>400?value.substring(0,400):value;
+        if(!events.isEmpty()&&events.peekLast().endsWith(item))return;
+        events.addLast(new java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.US).format(new java.util.Date())+"  "+item);
+        while(events.size()>20)events.removeFirst();
+    }
     private Runnable scheduledAction;
     private final Runnable heartbeat=new Runnable(){public void run(){if(!closing){send("ping");handler.postDelayed(this,1000);}}};
     @Override public void onCreate(){
@@ -39,11 +49,11 @@ public final class PilotService extends Service {
         nm.createNotificationChannel(new NotificationChannel("pilot","Bead Pilot controls",NotificationManager.IMPORTANCE_LOW));
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,PilotService.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE);
-        Notification n=new Notification.Builder(this,"pilot").setContentTitle("Bead Pilot")
-            .setContentText("Root solver active. Tap to calibrate; Stop ends capture and input.")
+        notification=new Notification.Builder(this,"pilot").setContentTitle("Bead Pilot")
+            .setContentText("Automatic player active. Open for status; Stop ends capture and input.")
             .setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(open).setOngoing(true)
-            .addAction(new Notification.Action.Builder(null,"Stop",stop).build()).build();
-        startForeground(1,n);showOverlay();
+            .addAction(new Notification.Action.Builder(null,"Stop",stop).build());
+        startForeground(1,notification.build());showOverlay();
         new Thread(this::launch,"root-launch").start();handler.post(heartbeat);
     }
     private void launch(){
@@ -69,19 +79,22 @@ public final class PilotService extends Service {
                             Bitmap bitmap=BitmapFactory.decodeByteArray(bytes,0,bytes.length);
                             if(bitmap!=null){preview=bitmap;publish("Detected board preview is ready in RAM.");}
                         }else if(type.equals("focus")){detectedPackage=text;getSharedPreferences("pilot",MODE_PRIVATE).edit().putString("lastGamePackage",text).apply();}
-                        else {if(type.equals("error"))lastRootError=text;publish(text);}
+                        else {if(type.equals("ready")){JSONObject mode=deferredMode;deferredMode=null;if(mode!=null)sendObject(mode);}
+                            if(type.equals("error"))lastRootError=text;publish(text);}
                     }catch(JSONException ignored){publish("Root: "+line.substring(0,Math.min(240,line.length())));}
                 }
             }
             if(!closing){publish(lastRootError.isEmpty()?"Root process exited. Check root permission and device compatibility.":lastRootError);handler.post(this::stopSelf);}
         }catch(Exception e){publish("Root start failed: "+e.getMessage());handler.post(this::stopSelf);}
     }
-    private void publish(String value){status=value;
-        handler.post(()->{if(overlayStatus!=null)overlayStatus.setText(value.substring(0,Math.min(150,value.length())));
+    private void publish(String value){status=value;remember(value);
+        handler.post(()->{if(!closing&&notification!=null){notification.setContentText(value).setStyle(new Notification.BigTextStyle().bigText(value));getSystemService(NotificationManager.class).notify(1,notification.build());}
+            if(overlayStatus!=null)overlayStatus.setText(value.substring(0,Math.min(150,value.length())));
             Runnable observer=statusObserver;if(observer!=null)observer.run();});}
     private void sendObject(JSONObject value){
         if(closing)return;
-        writes.execute(()->{try{BufferedWriter writer=control;if(writer!=null){writer.write(value.toString());writer.newLine();writer.flush();}}
+        writes.execute(()->{try{BufferedWriter writer=control;if(writer!=null){writer.write(value.toString());writer.newLine();writer.flush();}
+            else {String cmd=value.optString("cmd");if(cmd.equals("auto")||cmd.equals("inspect")||cmd.equals("pause"))deferredMode=value;}}
             catch(IOException e){publish("Control pipe closed; root watchdog will stop input");}});
     }
     private void send(String command){try{sendObject(new JSONObject().put("cmd",command));}catch(JSONException ignored){}}
@@ -123,11 +136,17 @@ public final class PilotService extends Service {
     private void showOverlay(){
         if(!Settings.canDrawOverlays(this))return;
         wm=getSystemService(WindowManager.class);overlay=new LinearLayout(this);overlay.setOrientation(LinearLayout.VERTICAL);overlay.setBackgroundColor(0xdd203329);
+        overlayStatus=new TextView(this);overlayStatus.setTextColor(Color.WHITE);overlayStatus.setTextSize(11);overlayStatus.setMaxLines(3);
+        int dp=(int)(180*getResources().getDisplayMetrics().density);overlayStatus.setWidth(dp);overlayStatus.setPadding(8,4,8,0);overlayStatus.setText(status);overlay.addView(overlayStatus);
         LinearLayout controls=new LinearLayout(this);overlay.addView(controls);
         Button stop=new Button(this);stop.setText("STOP");stop.setOnClickListener(v->stopSelf());controls.addView(stop);
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(-2,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_SECURE,PixelFormat.TRANSLUCENT);
         p.gravity=Gravity.BOTTOM|Gravity.RIGHT;p.y=12;
+        // Drag the status area out of the way. It never intercepts board-wide touches.
+        overlayStatus.setOnTouchListener(new View.OnTouchListener(){float x,y;int ox,oy;
+            public boolean onTouch(View v,android.view.MotionEvent e){if(e.getAction()==android.view.MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();ox=p.x;oy=p.y;return true;}
+                if(e.getAction()==android.view.MotionEvent.ACTION_MOVE){p.x=Math.max(0,ox+Math.round(x-e.getRawX()));p.y=Math.max(0,oy+Math.round(y-e.getRawY()));wm.updateViewLayout(overlay,p);return true;}return true;}});
         try{wm.addView(overlay,p);}catch(RuntimeException e){publish("Overlay unavailable; use notification Stop");overlay=null;}
     }
     @Override public void onDestroy(){

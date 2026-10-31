@@ -1,3 +1,23 @@
+# Current debugging continuation — v0.7
+
+Working repository source is now extracted in android/. The old source-ZIP-only description below is historical. Current workspace is /workspace/bead-pilot-publish; /workspace/bead-out is the preserved v0.5 baseline.
+
+User said v0.6 failed and they could not tell whether it did anything. Source comparison confirmed substantive v0.6 changes in AutoLayout, AutomaticRootMain and generated tests. v0.6 was NOT a renamed v0.5. We retained its hue-independent walls and shape support and fixed reproduced real-frame regressions rather than blindly reverting all changes.
+
+Reproduction: unmodified v0.6 test-auto.sh passed 34 interpretation and 293 generated checks, then failed on the first actual gameplay frame with “Waiting for a supported, closed loop outline.” Lowering its rigid band threshold exposed damaged cup footprints (all candidates blocked), feeder texture branches, geometry resets on moving beads, and queue tails shrinking during refill. These defects are covered by the expanded real-frame sequence regression.
+
+v0.7 changes: preserve complete cup components and use opening only for wall-connected components; remove rim/shadow halo from wall occupancy; offset observed closed rails with real shaded bead support and retain validated skeleton support; save trackOutline in Config and compare rails instead of moving bead centerlines; smooth filled feeder bodies, locate remote ends and compare shared feeder corridors; recognize visibly empty tinted rail floors while rejecting synthetic opaque occlusion. Previously observed loop geometry may survive complete collection only while its same closed rail is observed. Full geometry checks run about every 1.5 s; failures withhold taps, transient failures retain tracker up to bounded recovery, real geometry changes need two observations. Search and actual input guards remain.
+
+Visibility: notification now shows status, optional floating status+STOP is draggable, activity displays/copies last 20 timestamped events (RAM only). No screenshot logs/files were introduced. Root-not-ready Start commands are retained for delivery at ready. Reports waiting for geometry, OCR, movement, safe choice or fresh capture rather than only a generic active label.
+
+3,420 host checks passed (295 generated adaptive +88 real-frame +34 interpretation +3,003 previous domain/perception checks). v0.6's generated checks alone did not establish real-frame compatibility. Video file/frames remain host-only and are excluded from archives. No complete phone gameplay or native OCR validation has been performed; do not call the user-reported phone issue fully solved until live evidence supports that.
+
+Signing: v0.7 uses v0.5 certificate SHA256 35c7fe5a3f8493bcad71c8e87b7c260e5539663ddf153f3a6ed673780ec4046c. v0.6 has a different signing certificate, so uninstall Bead Pilot v0.6 before installing v0.7 (not Bead Out). Original debug keystore remains outside repo at /workspace/bead-tools/android-user/debug.keystore. Never include it in archives.
+
+Download delivery uses normal GitHub HTTPS URLs under downloads/. Verify final binary/hash/release before sharing. GitHub upload-assets credentials failed previously; git push works for binary files below 100 MB. Preserve v0.5/v0.6 artifacts and history.
+
+---
+
 # Bead Pilot debugging handoff
 
 ## Current development changes (v0.6)

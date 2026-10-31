@@ -29,7 +29,7 @@ public final class AutomaticRootMain {
     private LevelCycle cycle=new LevelCycle();
     private Input input;
     private Bitmap lastPreview;
-    private long epoch,sequence,lastOcr,lastFull,lastStatus,lastPlan,lastRefresh,modelSince;
+    private long epoch,sequence,lastOcr,lastFull,lastStatus,lastPlan,lastRefresh,modelSince,lastGeometryGood,geometryFailureSince;
     private final int[]slotGeneration=new int[4];
     private final AutoLayout.Stability layoutStability=new AutoLayout.Stability();
     private String lastBoard="",planKey="",tapBefore;
@@ -74,10 +74,10 @@ public final class AutomaticRootMain {
     private void emit(String type,String text){try{emitObject(new JSONObject().put("type",type).put("text",text));}catch(JSONException ignored){}}
     private void emitObject(JSONObject json){synchronized(outputLock){System.out.println(json);System.out.flush();}}
     private boolean fresh(OcrResult r,long now){return r!=null&&r.ok&&now-r.request.time<2_500_000_000L;}
-    private void resetModel(){config=null;perception=null;tracker=null;plan=null;planKey="";tapBefore=null;layoutStability.clear();stableBoard=0;lastBoard="";epoch++;Arrays.fill(slotGeneration,0);}
+    private void resetModel(){lastGeometryGood=0;geometryFailureSince=0;config=null;perception=null;tracker=null;plan=null;planKey="";tapBefore=null;layoutStability.clear();stableBoard=0;lastBoard="";epoch++;Arrays.fill(slotGeneration,0);}
     private void apply(AutoLayout.Detection d,Capture.Frame frame,String focus)throws Exception{
         layoutStability.clear();latest.set(null);latestFull.set(null);lastFull=0;
-        config=d.config;config.packageName=focus;gamePackage=focus;perception=new AutoPerception(config);tracker=new Tracker(config.interval,true);epoch++;Arrays.fill(slotGeneration,0);modelSince=System.nanoTime();lastBoard="";stableBoard=0;plan=null;tapBefore=null;planKey="";
+        config=d.config;config.packageName=focus;gamePackage=focus;perception=new AutoPerception(config);tracker=new Tracker(config.interval,true);epoch++;Arrays.fill(slotGeneration,0);modelSince=System.nanoTime();lastGeometryGood=modelSince;geometryFailureSince=0;lastBoard="";stableBoard=0;plan=null;tapBefore=null;planKey="";
         emit("focus",gamePackage);emitObject(new JSONObject().put("type","layout").put("config",config.json()).put("text",d.summary));
         if(lastPreview!=null)lastPreview.recycle();lastPreview=frame.bitmap();sendPreview();emit("status",d.summary+". Measuring movement before tapping.");
     }
@@ -140,12 +140,17 @@ public final class AutomaticRootMain {
                     Thread.sleep(250);continue;
                 }
                 try{
-                    boolean geometryChecked=false;
-                    if(now-lastRefresh>500_000_000L){
+                    boolean geometryChecked=lastGeometryGood>0&&now-lastGeometryGood<2_000_000_000L&&geometryFailureSince==0;
+                    if(now-lastRefresh>1_500_000_000L){
                         lastRefresh=now;
-                        try{found=detector.detect(frame,config);}catch(IllegalStateException e){resetModel();throw e;}
+                        try{found=detector.detect(frame,config);}catch(IllegalStateException e){
+                            plan=null;planKey="";layoutStability.clear();lastGeometryGood=0;
+                            if(geometryFailureSince==0)geometryFailureSince=now;
+                            if(now-geometryFailureSince>6_000_000_000L)resetModel();
+                            status(now,"Scanning again; taps paused: "+e.getMessage());Thread.sleep(250);continue;
+                        }
                         if(!AutoLayout.sameGeometry(config,found.config,frame.width,frame.height)){
-                            plan=null;planKey="";
+                            lastGeometryGood=0;plan=null;planKey="";
                             if(layoutStability.observe(found.config,frame.width,frame.height))apply(found,frame,focus);
                             status(now,"Layout changed; rechecking geometry before tapping");
                             Thread.sleep(250);continue;
@@ -153,7 +158,7 @@ public final class AutomaticRootMain {
                         layoutStability.clear();
                         config.buttons.clear();config.buttons.addAll(found.config.buttons);
                         config.clickable=found.config.clickable;config.unknownBoxes=found.config.unknownBoxes;config.unlockValues=found.config.unlockValues;
-                        geometryChecked=true;
+                        lastGeometryGood=System.nanoTime();geometryFailureSince=0;geometryChecked=true;
                     }
                     Vision.Observation observation=perception.read(frame);progress(observation,now);
                     String board=observation.boardKey();stableBoard=board.equals(lastBoard)?stableBoard+1:0;lastBoard=board;
@@ -174,13 +179,14 @@ public final class AutomaticRootMain {
                         }
                     }
                     long heap=(Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory())/1048576;
-                    status(now,!ocrReady?"Loading offline text recognition; taps paused":(requested?"Automatic play":"Preview only")+": "+occupied+"/4 slots; "+config.buttons.size()+" board squares. "+tracker.note+"\nJava heap "+heap+"MiB; "+capture.backend);
+                    String activity=!geometryChecked?"Scanning; taps paused":tracker.speedSamples()<3?"Measuring bead speed":plan==null||plan.firstAction()<0?"Waiting for a safe collector":"Automatic play";
+                    status(now,!ocrReady?"Loading offline text recognition; taps paused":(requested?activity:"Preview only")+": "+occupied+"/4 slots; "+config.buttons.size()+" board squares. "+tracker.note+"; "+tracker.speedSamples()+" movement samples\nJava heap "+heap+"MiB; "+capture.backend);
                 }catch(Exception e){
                     String message=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();status(now,message);
                     if(message.contains("direction reversed")){
                         ArrayList<float[]>p=config.lanes.get(0);float[]first=p.remove(0);Collections.reverse(p);p.add(0,first);tracker=new Tracker(config.interval,true);plan=null;epoch++;
                     }else if(!message.startsWith("Reading existing")){
-                        if(now-modelSince>2_000_000_000L){resetModel();lastFull=0;}
+                        if(now-modelSince>8_000_000_000L){resetModel();lastFull=0;}
                     }
                 }
                 Thread.sleep(250);
@@ -190,7 +196,7 @@ public final class AutomaticRootMain {
     private void status(long now,String message){if(now-lastStatus<900_000_000L)return;emit("status",message);lastStatus=now;}
     private boolean tap(long token,float[]point,Capture.Frame frame,Capture capture)throws Exception{
         if(point==null||!focus().equals(gamePackage))return false;
-        synchronized(controlLock){if(stopped||!requested||token!=controlVersion.get()||System.nanoTime()-frame.nanos>2_000_000_000L)return false;if(input==null)input=new Input();input.tap(point[0]*capture.physicalWidth,point[1]*capture.physicalHeight);return true;}
+        synchronized(controlLock){if(stopped||!requested||token!=controlVersion.get())return false;if(System.nanoTime()-frame.nanos>2_000_000_000L){status(System.nanoTime(),"Captured frame is too old; taps paused until a fresh frame arrives");return false;}if(input==null)input=new Input();input.tap(point[0]*capture.physicalWidth,point[1]*capture.physicalHeight);return true;}
     }
     private boolean pressHome(long token)throws Exception{synchronized(controlLock){if(stopped||!requested||token!=controlVersion.get())return false;if(input==null)input=new Input();input.home();return true;}}
     private static boolean buttonColor(Capture.Frame frame,float[]p,boolean green){if(p==null)return false;int x=Math.round(p[0]*frame.width),y=Math.round(p[1]*frame.height),yes=0,n=0;

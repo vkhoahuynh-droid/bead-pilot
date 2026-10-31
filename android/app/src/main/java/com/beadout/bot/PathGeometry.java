@@ -27,8 +27,8 @@ public final class PathGeometry {
         for(int i=0;i<segments;i++){
             float[]a=points.get(i),b=points.get((i+1)%points.size());double dx=(b[0]-a[0])*width,dy=(b[1]-a[1])*height;
             double qx=(x-a[0])*width,qy=(y-a[1])*height;double norm=dx*dx+dy*dy;
-            double t=norm<.000001?0:Math.max(0,Math.min(1,(qx*dx+qy*dy)/norm));double d=Math.hypot(qx-t*dx,qy-t*dy);
+            double t=norm<.000001?0:Math.max(0,Math.min(1,(qx*dx+qy*dy)/norm));double ex=qx-t*dx,ey=qy-t*dy,d=ex*ex+ey*ey;
             if(d<best){best=d;along=distances[i]+t*Math.sqrt(norm);}
-        }return new double[]{along,best};
+        }return new double[]{along,Math.sqrt(best)};
     }
 }

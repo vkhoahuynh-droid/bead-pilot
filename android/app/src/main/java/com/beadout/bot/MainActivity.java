@@ -24,6 +24,7 @@ public final class MainActivity extends Activity {
         button(body,"Pause",()->{if(PilotService.active)start("pause");});
         button(body,"Stop",()->stopService(new Intent(this,PilotService.class)));
         status=new TextView(this);status.setTextSize(15);status.setPadding(0,20,0,20);status.setTextIsSelectable(true);body.addView(status);
+        button(body,"Copy recent status",()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(ClipData.newPlainText("Bead Pilot status",PilotService.recentEvents()));Toast.makeText(this,"Recent status copied",Toast.LENGTH_SHORT).show();});
         button(body,"Show detected board",()->{if(PilotService.preview==null){if(PilotService.active)start("snapshot");}image.setVisibility(image.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);refresh();});
         image=new DetectionView();image.setVisibility(View.GONE);body.addView(image,new LinearLayout.LayoutParams(-1,-2));
         if(!Settings.canDrawOverlays(this))button(body,"Allow floating Stop button",()->startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName()))));
@@ -34,7 +35,7 @@ public final class MainActivity extends Activity {
     private void start(String action){startForegroundService(new Intent(this,PilotService.class).setAction(action));}
     @Override protected void onResume(){super.onResume();PilotService.statusObserver=update;refresh();}
     @Override protected void onPause(){super.onPause();if(PilotService.statusObserver==update)PilotService.statusObserver=null;}
-    private void refresh(){if(status!=null)status.setText(PilotService.status);if(image!=null){image.requestLayout();image.invalidate();}}
+    private void refresh(){if(status!=null)status.setText(PilotService.status+"\n\nRecent activity (RAM only):\n"+PilotService.recentEvents());if(image!=null){image.requestLayout();image.invalidate();}}
     private final class DetectionView extends View {
         private final Paint paint=new Paint(3);private final Rect destination=new Rect();
         DetectionView(){super(MainActivity.this);}

@@ -35,6 +35,17 @@ public final class AutoDetectionReplayTest {
         check(tracker.interval()>.08&&tracker.interval()<.18,"live displacement estimates plausible bead-row speed");
         check(tracker.completions()==0,"startup animations do not falsely complete a collector");
     }
+    static void sequenceChecks(String directory)throws Exception{
+        AutoLayout detector=new AutoLayout();Config previous=null;AutoLayout.Stability stability=new AutoLayout.Stability();int stable=0;
+        for(int i=1;i<=19;i++){
+            Capture.Frame f=frame(ImageIO.read(new File(directory,String.format("%03d.png",i))));
+            Config current;try{current=detector.detect(f,previous).config;}catch(IllegalStateException e){check(i<7,"settled gameplay must be recognized at frame "+i+": "+e.getMessage());stability.clear();continue;}
+            if(previous!=null){check(AutoLayout.sameGeometry(previous,current,f.width,f.height),"moving bead colors must not be mistaken for a new track at frame "+i);}
+            if(stability.observe(current,f.width,f.height))stable++;
+            previous=current;
+        }
+        check(stable>=10,"real gameplay recovers from slot animation and stays recognized");
+    }
     public static void main(String[]args)throws Exception{
         if(args.length!=1)throw new IllegalArgumentException("Pass a directory of 0.5-second frames extracted from the supplied clip");
         for(int number:new int[]{1,7,11,15,19}){
@@ -55,6 +66,7 @@ public final class AutoDetectionReplayTest {
             System.out.println("frame "+number+": "+found.summary+"; eligible="+eligible+" rows="+c.loopRows+" pitch="+c.pitch+" in "+(System.nanoTime()-start)/1e6+"ms");
         }
         blockerChecks(new File(args[0],"001.png"));
+        sequenceChecks(args[0]);
         movementChecks(args[0]);
         System.out.println("PASS: "+checks+" real-frame automatic detection checks");
     }

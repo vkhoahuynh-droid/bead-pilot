@@ -69,6 +69,11 @@ public final class AdaptiveLayoutTest {
         Config upper=new AutoLayout().detect(scene(1,0xff2879f5,7,false,true,false,false,true)).config;
         boolean top=false;for(Config.FeedPath feed:upper.feeders)for(float[]p:feed.points)if(p[0]>.35&&p[0]<.65&&p[1]<.1)top=true;
         check(top,"a feeder above the loop is followed rather than replaced by a side queue");
+        check(!AutoLayout.sameGeometry(rectangle,upper,582,1280),"a changed feeder route invalidates track geometry");
+        Capture.Frame populated=scene(1,0xff8296eb,7,false,true,false);int[]emptyRing=populated.pixels.clone();
+        for(int y=0;y<populated.height;y++)for(int x=0;x<populated.width;x++)if((emptyRing[y*582+x]&0xffffff)==0xff5520)emptyRing[y*582+x]=0xff555555;
+        Config late=new AutoLayout().detect(new Capture.Frame(582,1280,emptyRing),rectangle).config;
+        check(AutoLayout.sameGeometry(rectangle,late,582,1280),"an emptied loop retains geometry only when its closed rail is still observed");
         AutoLayout.Stability gate=new AutoLayout.Stability();
         check(!gate.observe(ellipse,582,1280),"one frame cannot enable taps");
         check(gate.observe(ellipse,582,1280),"two stable frames accepted");

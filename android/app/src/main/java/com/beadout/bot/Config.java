@@ -6,7 +6,7 @@ import java.util.*;
 public final class Config {
     public static final String[] NAMES={"yellow","white","lavender","orange","green","blue","lime","purple","pink","peach","brown","olive","red","royal_blue"};
     public static final int[] RGB={0xfff5e300,0xffece7e8,0xff9682f5,0xffff5505,0xff00a307,0xff10bcf5,0xffafe100,0xff850092,0xffc3005f,0xffffa583,0xffae5810,0xff8ba013,0xffed1b35,0xff2879f5};
-    public final ArrayList<float[]> slots=new ArrayList<>(),buttons=new ArrayList<>();
+    public final ArrayList<float[]> slots=new ArrayList<>(),buttons=new ArrayList<>(),trackOutline=new ArrayList<>();
     public final ArrayList<ArrayList<float[]>> lanes=new ArrayList<>();
     public static final class FeedPath {
         public final int lane;
@@ -33,7 +33,7 @@ public final class Config {
     public String packageName="";
     public boolean navigationReady(){return winMarker!=null&&nextMarker!=null&&winMarker.y<.4f;}
     public boolean themeReady(){if(!backgroundKnown)return false;for(boolean known:emptySlotKnown)if(!known)return false;return true;}
-    public void clearLevelGeometry(){slots.clear();buttons.clear();lanes.clear();feeders.clear();Arrays.fill(emptySlotKnown,false);backgroundKnown=false;confirmed=false;}
+    public void clearLevelGeometry(){slots.clear();buttons.clear();trackOutline.clear();lanes.clear();feeders.clear();Arrays.fill(emptySlotKnown,false);backgroundKnown=false;confirmed=false;}
     public Config(){
         for(int x:new int[]{190,257,326,394})slots.add(new float[]{x/582f,600/1280f});
         int[][] pts={{180,707},{254,707},{329,707},{403,707},{180,800},{254,800},{329,800},{403,800},{180,886},{403,886},{180,968},{403,968},{254,1050},{329,1050},{403,1050}};
@@ -45,7 +45,7 @@ public final class Config {
     public JSONObject json()throws JSONException{
         JSONObject j=new JSONObject().put("confirmed",confirmed).put("requireBorder",requireBorder).put("autoNext",autoNext).put("pitch",pitch).put("interval",interval)
             .put("automatic",automatic).put("rowUnit",rowUnit).put("loopRows",loopRows).put("slotLift",slotLift)
-            .put("width",width).put("depth",depth).put("package",packageName).put("slots",points(slots)).put("buttons",points(buttons));
+            .put("width",width).put("depth",depth).put("package",packageName).put("slots",points(slots)).put("buttons",points(buttons)).put("trackOutline",points(trackOutline));
         JSONArray arr=new JSONArray();for(ArrayList<float[]> lane:lanes)arr.put(points(lane));j.put("lanes",arr);
         JSONArray fs=new JSONArray();for(FeedPath feed:feeders)fs.put(new JSONObject().put("lane",feed.lane).put("points",points(feed.points)).put("skipConnector",feed.skipConnector));j.put("feeders",fs);
         if(winMarker!=null)j.put("winMarker",winMarker.json());if(nextMarker!=null)j.put("nextMarker",nextMarker.json());
@@ -72,6 +72,8 @@ public final class Config {
         if(empty!=null){if(empty.length()!=4)throw new JSONException("Four empty-slot colors required");for(int i=0;i<4;i++)if(!empty.isNull(i)){c.emptySlotRgb[i]=empty.getInt(i);c.emptySlotKnown[i]=true;}}
         if(j.has("backgroundRgb")){c.backgroundRgb=j.getInt("backgroundRgb");c.backgroundKnown=true;}
         c.width=j.optInt("width",128);c.depth=j.optInt("depth",5);c.packageName=j.optString("package","");
+        if(j.has("trackOutline"))readPoints(j.getJSONArray("trackOutline"),c.trackOutline);
+        if(c.trackOutline.size()>1000)throw new JSONException("Track outline is too large");
         if(j.has("slots"))readPoints(j.getJSONArray("slots"),c.slots);
         if(j.has("buttons"))readPoints(j.getJSONArray("buttons"),c.buttons);
         JSONArray opens=j.optJSONArray("clickable"),unknown=j.optJSONArray("unknownBoxes"),unlocks=j.optJSONArray("unlocks");
