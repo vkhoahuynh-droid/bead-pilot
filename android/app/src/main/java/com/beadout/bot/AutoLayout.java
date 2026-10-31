@@ -31,7 +31,7 @@ public final class AutoLayout {
         Box(Region r,boolean empty){this.r=r;this.empty=empty;x=r.x+r.w*.5;y=r.y+(empty?r.h*.5:Math.min(r.h*.68,r.w*.75));}
     }
     private static final class Grid {
-        final Capture.Frame frame;final int w,h,n;final int[]rgb,lum,sat,value;final int bg,bgLum;
+        final Capture.Frame frame;final int w,h,n;final int[]rgb,lum,sat,value;final int bg,bgLum;final byte[]bead;
         Grid(Capture.Frame f){frame=f;w=(f.width+1)/2;h=(f.height+1)/2;n=w*h;rgb=new int[n];lum=new int[n];sat=new int[n];value=new int[n];int[]hist=new int[32768];
             for(int y=0;y<h;y++)for(int x=0;x<w;x++){
                 int c=f.pixel(x*2,y*2),r=(c>>16)&255,g=(c>>8)&255,b=c&255,i=y*w+x;
@@ -39,9 +39,17 @@ public final class AutoLayout {
                 if(x>w*.1&&x<w*.9&&y>h*.1&&y<h*.9)hist[(r/8)*1024+(g/8)*32+b/8]++;
             }
             int bin=0;for(int i=1;i<hist.length;i++)if(hist[i]>hist[bin])bin=i;
-            int r=(bin/1024)*8+4,g=(bin/32%32)*8+4,b=(bin%32)*8+4;bg=0xff000000|r<<16|g<<8|b;bgLum=(3*r+6*g+b)/10;
+            int r=(bin/1024)*8+4,g=(bin/32%32)*8+4,b=(bin%32)*8+4;bg=0xff000000|r<<16|g<<8|b;bgLum=(3*r+6*g+b)/10;bead=new byte[n];double[]theme=AdaptivePalette.hsv(bg);
+            for(int i=0;i<n;i++){
+                boolean strong=(sat[i]>130&&value[i]>90)||(lum[i]>bgLum+15&&sat[i]<60);
+                int pixel=rgb[i],dr=((pixel>>16)&255)-r,dg=((pixel>>8)&255)-g,db=(pixel&255)-b;
+                if(!strong&&value[i]>85&&sat[i]<130&&dr*dr+dg*dg+db*db>26*26&&!(sat[i]<26&&value[i]<122)){
+                    double[]tone=AdaptivePalette.hsv(rgb[i]);boolean floor=theme[1]>.08&&tone[1]>theme[1]*.4&&tone[1]<Math.min(.6,theme[1]+.3)&&AdaptivePalette.hue(tone[0],theme[0])<22&&tone[2]<theme[2]*.98;strong=!floor;
+                }
+                if(strong)bead[i]=1;
+            }
         }
-        boolean color(int i){return (sat[i]>130&&value[i]>90)||(lum[i]>bgLum+15&&sat[i]<60);}
+        boolean color(int i){return bead[i]!=0;}
         int at(double x,double y){return Math.max(0,Math.min(h-1,(int)Math.round(y)))*w+Math.max(0,Math.min(w-1,(int)Math.round(x)));}
     }
     public Detection detect(Capture.Frame frame){
@@ -101,7 +109,9 @@ public final class AutoLayout {
             // A queue must actually approach this loop; unrelated UI is ignored.
             if(toe<0||toeD>width*2)continue;
             ArrayList<float[]>route=feederRoute(shape,sk,g.w,g.h,toe,slotWidth);
-            if(route.size()<slotWidth)throw new IllegalStateException("Queue centerline is incomplete");
+            if(route.size()<slotWidth)continue;
+            double reach=0;for(float[]p:route)reach=Math.max(reach,loopPath.nearest(p[0]/g.w,p[1]/g.h)[1]);
+            if(reach<width*1.5)continue; // A leftover strip of the loop is not a feeder.
             route=smoothOpen(route,2);
             ArrayList<float[]>feed=new ArrayList<>();float[]junction=loopPath.point(join);
             feed.add(new float[]{junction[0]*g.w,junction[1]*g.h});feed.addAll(route);
@@ -123,7 +133,7 @@ public final class AutoLayout {
                 }
             }
         }
-        if(feeds.size()!=2)throw new IllegalStateException("Waiting for two observed feeder paths");
+        if(feeds.size()!=2)throw new IllegalStateException("Found "+feeds.size()+" feeder paths; waiting for two observed feeder paths");
         feeds.sort(Comparator.comparingDouble(f->f.points.get(0)[0]));c.feeders.addAll(feeds);
         c.pitch=pitches.isEmpty()?slotWidth*2*.12:median(pitches);c.pitch=Math.max(4,Math.min(18,c.pitch));
         c.loopRows=Math.max(20,Math.min(400,(int)Math.round(new PathGeometry(c.lanes.get(0),true,g.frame.width,g.frame.height).length/c.pitch)));
@@ -134,7 +144,7 @@ public final class AutoLayout {
     }
     public void refreshSquares(Capture.Frame f,Config c){Grid g=new Grid(f);double y=0;for(float[]p:c.slots)y+=p[1]*g.h/4;refreshSquares(g,c,y);}
     private static void refreshSquares(Grid g,Config c,double slotY){
-        byte[]m=new byte[g.n];for(int y=(int)(slotY+g.w*.055);y<g.h*.9;y++)for(int x=0;x<g.w;x++){int i=y*g.w+x;if((g.sat[i]>110&&g.value[i]>90)||(g.lum[i]>g.bgLum+18&&g.sat[i]<50)||(g.sat[i]<110&&g.value[i]<180&&g.lum[i]<g.bgLum-45))m[i]=1;}
+        byte[]m=new byte[g.n];for(int y=(int)(slotY+g.w*.055);y<g.h*.9;y++)for(int x=0;x<g.w;x++){int i=y*g.w+x;if(g.color(i)||(g.sat[i]>110&&g.value[i]>90)||(g.lum[i]>g.bgLum+18&&g.sat[i]<50)||(AdaptivePalette.darkUnknown(g.rgb[i])&&g.lum[i]<g.bgLum-45))m[i]=1;}
         byte[]classes=colorClasses(g,m);ArrayList<Region>boxes=new ArrayList<>();
         // Preserve complete cup rims/shading. Opening is only a way to separate
         // a cup connected to a long same-color wall, not a replacement for its
@@ -163,7 +173,7 @@ public final class AutoLayout {
         for(int y=(int)(g.h*.30);y<g.h*.86;y++)for(int x=0;x<g.w;x++){
             int i=y*g.w+x,r=(g.rgb[i]>>16)&255,gg=(g.rgb[i]>>8)&255,b=g.rgb[i]&255,br=(g.bg>>16)&255,bg=(g.bg>>8)&255,bb=g.bg&255;
             if(g.lum[i]>g.bgLum+8&&g.sat[i]<110&&(r-br)*(r-br)+(gg-bg)*(gg-bg)+(b-bb)*(b-bb)>144)bright[i]=1;
-            if((g.sat[i]>110&&g.value[i]>90)||(g.lum[i]>g.bgLum+18&&g.sat[i]<50))colored[i]=1;
+            if(g.color(i)||(g.sat[i]>110&&g.value[i]>90)||(g.lum[i]>g.bgLum+18&&g.sat[i]<50))colored[i]=1;
         }
         ArrayList<Box>out=new ArrayList<>();
         for(Region r:components(bright,g.w,g.h,true).regions)if(r.w>g.w*.045&&r.w<g.w*.19&&r.h>g.w*.035&&r.h<g.w*.17&&(double)r.w/r.h>1.05&&(double)r.w/r.h<1.8&&r.area>(double)r.w*r.h*.45)out.add(new Box(r,true));
@@ -427,7 +437,7 @@ public final class AutoLayout {
         }return c;
     }
     private static byte[]colorClasses(Grid g,byte[]m){
-        byte[]out=new byte[m.length];for(int i=0;i<m.length;i++)if(m[i]!=0){if(g.sat[i]<110&&g.value[i]<180&&g.lum[i]<g.bgLum-45){out[i]=16;continue;}if(g.sat[i]<80){out[i]=15;continue;}
+        byte[]out=new byte[m.length];for(int i=0;i<m.length;i++)if(m[i]!=0){if(AdaptivePalette.darkUnknown(g.rgb[i])&&g.lum[i]<g.bgLum-45){out[i]=16;continue;}if(g.sat[i]<110){out[i]=(byte)(g.lum[i]>g.bgLum+15?15:17);continue;}
             int c=g.rgb[i];double r=(c>>16)&255,gg=(c>>8)&255,b=c&255,max=Math.max(r,Math.max(gg,b)),min=Math.min(r,Math.min(gg,b)),d=max-min,h=0;
             if(d>0){if(max==r)h=60*((gg-b)/d%6);else if(max==gg)h=60*((b-r)/d+2);else h=60*((r-gg)/d+4);}if(h<0)h+=360;
             out[i]=(byte)(h<16||h>344?1:h<44?2:h<72?3:h<160?4:h<206?5:h<256?6:h<316?7:8);

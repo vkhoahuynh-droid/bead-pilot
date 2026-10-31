@@ -13,6 +13,7 @@ public final class AdaptiveLayoutTest {
         if(shape==0)return new Ellipse2D.Double(164,180,254,440);
         if(shape==1)return new RoundRectangle2D.Double(164,180,254,440,70,70);
         Path2D p=new Path2D.Double();
+        if(shape==3){p.moveTo(180,610);p.lineTo(240,180);p.lineTo(410,610);p.closePath();return p;}
         p.moveTo(180,180);p.lineTo(402,180);p.lineTo(402,620);p.lineTo(180,620);
         p.lineTo(180,450);p.lineTo(245,450);p.lineTo(245,350);p.lineTo(180,350);p.closePath();return p;
     }
@@ -74,6 +75,18 @@ public final class AdaptiveLayoutTest {
         for(int y=0;y<populated.height;y++)for(int x=0;x<populated.width;x++)if((emptyRing[y*582+x]&0xffffff)==0xff5520)emptyRing[y*582+x]=0xff555555;
         Config late=new AutoLayout().detect(new Capture.Frame(582,1280,emptyRing),rectangle).config;
         check(AutoLayout.sameGeometry(rectangle,late,582,1280),"an emptied loop retains geometry only when its closed rail is still observed");
+        for(int shape:new int[]{0,1,3}){
+            Capture.Frame colorful=scene(shape,0xffeeeeee,7,false,true,false);int[]neutral=colorful.pixels.clone();
+            for(int i=0;i<neutral.length;i++){if((neutral[i]&0xffffff)==0x00b948)neutral[i]=0xff788b9c;if((neutral[i]&0xffffff)==0xced4df)neutral[i]=0xffe5d8bf;}
+            Capture.Frame beige=new Capture.Frame(582,1280,neutral);Config adapted=new AutoLayout().detect(beige).config;
+            check(adapted.feeders.size()==2,"gray bead feeders stay connected on a beige theme, shape "+shape);
+            Vision.Observation seen=new AutoPerception(adapted).read(beige);int gray=adapted.palette.match(0xff788b9c);check(gray>=0,"gray is learned as an actual bead/collector color");
+            boolean bead=false;for(Vision.FeedObservation feed:seen.feeds)for(int color:feed.beads)bead|=color==gray;check(bead,"gray feeder inventory is not discarded as empty rail");
+        }
+        Capture.Frame creamSource=scene(1,0xffeeeeee,7,false,true,false);int[]cream=creamSource.pixels.clone();
+        for(int i=0;i<cream.length;i++){if((cream[i]&0xffffff)==0xced4df)cream[i]=0xffe5d8bf;if((cream[i]&0xffffff)==0xf5e300)cream[i]=0xffdfdedc;}
+        Config whiteCup=new AutoLayout().detect(new Capture.Frame(582,1280,cream)).config;
+        check(whiteCup.buttons.size()==7,"a shaded white cup is still detected on a beige background");
         AutoLayout.Stability gate=new AutoLayout.Stability();
         check(!gate.observe(ellipse,582,1280),"one frame cannot enable taps");
         check(gate.observe(ellipse,582,1280),"two stable frames accepted");

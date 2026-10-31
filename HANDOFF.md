@@ -1,3 +1,21 @@
+# Current continuation — v0.8
+
+User reported v0.7 stuck waiting for two observed feeder paths, provided an inline Level 24 screenshot (beige theme, white enclosure, triangular loop, gray bead stretches/slate cups), and clarified that layouts and color sets change every level, with additional/fewer/new colors. The exact inline PNG is not a local file in this executor; do not claim an exact screenshot pixel replay. The original Level 23 video is still locally available.
+
+Confirmed general code defects: Grid.color excluded dark neutral/slate beads, breaking gray feeder stretches; AutoPerception treated gray as empty, and automatic planner/state labels assumed Config's 14 legacy colors. A short loop remnant could also throw Queue centerline incomplete before evaluating the two actual feeds.
+
+v0.8 adds AdaptivePalette: append-only observed RGB prototypes, dense-sample evidence (at least three votes), hue/value/perceptual color matching, cached descriptors, reset per new Config/level. Learns detected collectors first, then bead paths, avoiding an intermediate bead-edge shade merging cyan/blue. Holding-slot identity uses bounded shade hysteresis until observed empty. Prototypes append without reindexing. This is approximate clustering, bounded to 64 groups, not a promise to distinguish every shade/color; dark neutral question-mark squares remain excluded from known-color training.
+
+Planner is recreated when learned count changes; new IDs can exceed the 14 old labels without indexing failures. Legacy fixed RGB/name constants remain only for old manual code/tests and geometry uses coarse color segmentation, not semantic automatic labels. Config serializes its observed palette. Status shows observed color count and selected prototype RGB. AutoLayout recognizes gray/white foreground relative to theme, preserves unknown black tiles as obstacles, skips short/near-loop strip remnants and reports actual feeder count on failure.
+
+Optional debug preview keeps one most-recent failed-discovery game image in RAM (updated at most every four seconds), only encodes/sends it when requested. No screenshots/history are written. Reset clears stale UI geometry. Existing notification/floating status and Copy recent status remain.
+
+3,486 host checks passed: previous domain/perception 3,003; interpretation 34; adaptive palette 39; adaptive geometry 305; actual-frame replay 105. New synthetic fixtures exercise gray feeders on beige with oval, rectangular and triangular loops, plus a shaded white cup on beige. Palette tests exercise 2/5/18 colors, new additions, shade matching, gray/white/brown/orange distinction, count beyond 14, outlier rejection, and clearing/relearning fewer groups. Real replay requires four distinct holding colors and stable historical slot identities. These are not native phone OCR/full-level validation. The exact reported Level 24 phone failure still needs on-device confirmation after installing v0.8.
+
+Build/toolchain/signing/delivery remain as documented below. APK versionCode 8; v0.7 upgrades in place, v0.6's different certificate requires uninstalling Bead Pilot (not the game). Sources are extracted under android/ and a source ZIP accompanies the APK under downloads/.
+
+---
+
 # Current debugging continuation — v0.7
 
 Working repository source is now extracted in android/. The old source-ZIP-only description below is historical. Current workspace is /workspace/bead-pilot-publish; /workspace/bead-out is the preserved v0.5 baseline.

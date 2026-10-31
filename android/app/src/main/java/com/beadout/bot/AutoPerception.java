@@ -5,26 +5,35 @@ import java.util.*;
 /** Runtime sampling of automatically discovered geometry. Progress text is authoritative. */
 public final class AutoPerception {
     private final Config c;
-    private final int[]r=new int[9],g=new int[9],b=new int[9];
+    private final int[]r=new int[9],g=new int[9],b=new int[9],held={-1,-1,-1,-1};
     public AutoPerception(Config config){c=config;}
     private int rgb(Capture.Frame f,float x,float y){int px=Math.round(x*f.width),py=Math.round(y*f.height),i=0;for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int v=f.pixel(px+dx,py+dy);r[i]=(v>>16)&255;g[i]=(v>>8)&255;b[i]=v&255;i++;}Arrays.sort(r);Arrays.sort(g);Arrays.sort(b);return 0xff000000|r[4]<<16|g[4]<<8|b[4];}
-    private int color(int pixel){
-        if(Vision.nearColor(pixel,c.backgroundRgb,10))return Vision.EMPTY;
-        double rr=(pixel>>16)&255,gg=(pixel>>8)&255,bb=pixel&255,max=Math.max(rr,Math.max(gg,bb)),min=Math.min(rr,Math.min(gg,bb)),d=max-min,s=max==0?0:d/max,h=0;
-        if(d>0){if(max==rr)h=60*((gg-bb)/d%6);else if(max==gg)h=60*((bb-rr)/d+2);else h=60*((rr-gg)/d+4);}if(h<0)h+=360;
-        if(s>.5&&max>80){if(h<16||h>344)return 12;if(h<44)return max<180?10:3;if(h<72)return max<180?11:0;if(h<90)return 6;if(h<160)return 4;if(h<206)return 5;if(h<256)return 13;if(h<316)return 7;return 8;}
-        int br=(c.backgroundRgb>>16)&255,bg=(c.backgroundRgb>>8)&255,bl=c.backgroundRgb&255;
-        if(max<Math.max(br,Math.max(bg,bl))*.88&&s<.55)return Vision.EMPTY;
-        return Vision.classify(pixel);
+    private int color(int pixel){return AdaptivePalette.floor(pixel,c.backgroundRgb)?Vision.EMPTY:c.palette.match(pixel);}
+    private void learn(Capture.Frame f){
+        // Collectors provide stable object-color references before shaded bead
+        // highlights. Otherwise a boundary shade can swallow two nearby colors.
+        ArrayList<Integer>samples=new ArrayList<>();
+        for(float[]p:c.slots)for(int d=-1;d<=1;d++)objectCandidate(samples,rgb(f,p[0]+d*1f/f.width,p[1]-(float)c.slotLift));
+        for(int i=0;i<c.buttons.size();i++)if(i>=c.unknownBoxes.length||!c.unknownBoxes[i]){float[]p=c.buttons.get(i);for(int d=-1;d<=1;d++)objectCandidate(samples,rgb(f,p[0]+d*1f/f.width,p[1]));}
+        c.palette.observe(samples);samples.clear();
+        PathGeometry loop=new PathGeometry(c.lanes.get(0),true,f.width,f.height);
+        int n=Math.max(80,c.loopRows*2);for(int i=0;i<n;i++){float[]p=loop.point((i+.5)*loop.length/n);candidate(samples,rgb(f,p[0],p[1]));}
+        for(Config.FeedPath feed:c.feeders){PathGeometry path=new PathGeometry(feed.points,false,f.width,f.height);double skip=feed.skipConnector?path.distances[1]:0;
+            for(double at=skip+c.pitch*.5;at<path.length;at+=c.pitch*.5){float[]p=path.point(at);candidate(samples,rgb(f,p[0],p[1]));}}
+        c.palette.observe(samples);
     }
+    private int objectColor(int pixel){return Vision.nearColor(pixel,c.backgroundRgb,8)?Vision.EMPTY:c.palette.match(pixel);}
+    private void objectCandidate(List<Integer>samples,int pixel){if(!Vision.nearColor(pixel,c.backgroundRgb,8)&&!AdaptivePalette.darkUnknown(pixel))samples.add(pixel);}
+    private void candidate(List<Integer>samples,int pixel){if(!AdaptivePalette.floor(pixel,c.backgroundRgb)&&!AdaptivePalette.darkUnknown(pixel))samples.add(pixel);}
     public int[]slotColors(Capture.Frame f){
-        int[]out=new int[4];for(int i=0;i<4;i++){float[]p=c.slots.get(i);int upper=rgb(f,p[0],p[1]-(float)c.slotLift);int label=color(upper);
-            if(label>=0){out[i]=label;continue;}
-            int center=rgb(f,p[0],p[1]);out[i]=Vision.nearColor(center,c.emptySlotRgb[i],16)||Vision.nearColor(center,c.backgroundRgb,13)?Vision.EMPTY:color(center);
+        int[]out=new int[4];for(int i=0;i<4;i++){float[]p=c.slots.get(i);int upper=rgb(f,p[0],p[1]-(float)c.slotLift);int label=objectColor(upper);
+            if(label>=0){if(held[i]>=0&&AdaptivePalette.distance(upper,c.palette.rgb(held[i]))<1.6)label=held[i];out[i]=label;held[i]=label;continue;}
+            int center=rgb(f,p[0],p[1]);out[i]=Vision.nearColor(center,c.emptySlotRgb[i],16)||Vision.nearColor(center,c.backgroundRgb,13)?Vision.EMPTY:objectColor(center);if(out[i]==Vision.EMPTY)held[i]=-1;
         }return out;
     }
     public Vision.Observation read(Capture.Frame f){
-        int[]board=new int[c.buttons.size()];for(int i=0;i<board.length;i++){float[]p=c.buttons.get(i);board[i]=i<c.unknownBoxes.length&&c.unknownBoxes[i]?Vision.UNKNOWN:color(rgb(f,p[0],p[1]));if(board[i]>=0&&(i>=c.clickable.length||!c.clickable[i]))board[i]=Vision.EMPTY;}
+        learn(f);
+        int[]board=new int[c.buttons.size()];for(int i=0;i<board.length;i++){float[]p=c.buttons.get(i);board[i]=i<c.unknownBoxes.length&&c.unknownBoxes[i]?Vision.UNKNOWN:objectColor(rgb(f,p[0],p[1]));if(board[i]>=0&&(i>=c.clickable.length||!c.clickable[i]))board[i]=Vision.EMPTY;}
         Vision.Observation o=new Vision.Observation(slotColors(f),board,f.nanos);o.rowUnit=c.rowUnit;
         PathGeometry loop=new PathGeometry(c.lanes.get(0),true,f.width,f.height);int n=c.loopRows;int[]ring=new int[n];
         for(int i=0;i<n;i++){float[]p=loop.point((i+.5)*loop.length/n);int v=color(rgb(f,p[0],p[1]));o.total++;if(v==Vision.UNKNOWN){o.unknown++;v=Vision.EMPTY;}ring[i]=v;}

@@ -22,7 +22,7 @@ public final class Vision {
         int unknown,total;
         Observation(int[]slots,int[]board,long nanos){this.slots=slots;this.board=board;this.nanos=nanos;}
         double confidence(){return total==0?0:1-(double)unknown/total;}
-        int[] counts(){int[]c=new int[Config.NAMES.length];for(int[]lane:lanes)for(int v:lane)if(v>=0)c[v]+=rowUnit;for(FeedObservation feed:feeds)for(int v:feed.beads)if(v>=0)c[v]+=rowUnit;return c;}
+        int[] counts(){int size=Config.NAMES.length;for(int[]lane:lanes)for(int v:lane)size=Math.max(size,v+1);for(FeedObservation feed:feeds)for(int v:feed.beads)size=Math.max(size,v+1);int[]c=new int[size];for(int[]lane:lanes)for(int v:lane)if(v>=0)c[v]+=rowUnit;for(FeedObservation feed:feeds)for(int v:feed.beads)if(v>=0)c[v]+=rowUnit;return c;}
         String boardKey(){return Arrays.toString(slots)+Arrays.toString(board);}
     }
     public static final class FeedObservation {

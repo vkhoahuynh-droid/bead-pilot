@@ -1,12 +1,14 @@
-# Bead Pilot 0.7 — experimental
+# Bead Pilot 0.8 — experimental
 
-[Download v0.7 APK](https://github.com/vkhoahuynh-droid/bead-pilot/raw/refs/heads/main/downloads/Bead-Pilot-v0.7.apk)
+[Download v0.8 APK](https://github.com/vkhoahuynh-droid/bead-pilot/raw/refs/heads/main/downloads/Bead-Pilot-v0.8.apk)
 
 Editable Android sources are in `android/`; versioned APK/source downloads are in `downloads/`.
 
-**If v0.6 is installed, uninstall Bead Pilot first**, then install v0.7 and grant root again. This removes Bead Pilot settings, not Bead Out progress. v0.7 uses the original v0.5 signing certificate; v0.6 used a different certificate. v0.5 can update in place.
+**If v0.6 is installed, uninstall Bead Pilot first**, then install v0.8 and grant root again. This removes Bead Pilot settings, not Bead Out progress. v0.8 uses the original v0.5/v0.7 signing certificate; v0.6 used a different certificate. v0.5 and v0.7 can update in place.
 
-v0.7 fixes a reproduced regression: v0.6 rejected the first frame of the supplied gameplay despite passing generated-image tests. It restores recognition of shaded real beads/cup rims, tracks the closed rail independently of moving bead texture, and checks feeder overlap as queues drain. Brief animation/recognition failures pause taps before discarding the learned model. Status appears in the notification and optional draggable floating panel; Copy recent status copies a bounded RAM-only event history. Start commands wait for root startup when necessary.
+v0.8 replaces the automatic player's fixed color labels with a palette learned from visible collectors and beads. A new level starts with a fresh palette; newly observed colors append without renumbering old IDs. The planner uses the observed color count, including counts beyond the old 14 colors. Holding-slot color identities tolerate shading while a collector stays present. Low-confidence/unseen colors remain unknown; black question-mark tiles are never trained as known collectors. Color groups use bounded, approximate image clustering (up to 64 groups), so this is not a guarantee of separating arbitrary nearly identical colors.
+
+It also addresses a general source of the reported feeder-path failure: dark gray beads were excluded as rail/floor. Gray/white foreground detection now uses the current theme, and short leftover loop strips are rejected instead of aborting detection of valid feeders. Status reports the number of detected feeder paths. An optional last attempted game view is kept in RAM when discovery fails, so Show detected board can show an unannotated failure image without manual tracing or screenshot files.
 
 Automatic rooted Android player for Bead Out. Supports KernelSU Next through `su`.
 
@@ -32,7 +34,7 @@ Planning is bounded to 60 ms per search, at most twice per second. Performance, 
 
 ## Validation and limitations
 
-3,420 host checks passed: planner/search 1,220, finite feeders 1,607, level recovery 49, gameplay model 76, legacy perception/tracking 51, automatic interpretation 34, generated adaptive layouts 295, actual-frame detection/motion 88. Actual frames include the changing square count, all 19 half-second frames through motion/refill, and recovery from an unreadable slot animation. Generated fixtures cover varied border colors, oval/rectangular/concave loops, changed feeder routes, blockers, unknowns, empty loops, and obscured queues.
+3,486 host checks passed: planner/search 1,220, finite feeders 1,607, level recovery 49, gameplay model 76, legacy perception/tracking 51, automatic interpretation 34, adaptive palette 39, generated adaptive layouts 305, actual-frame detection/motion 105. Actual frames include the changing square count, all 19 half-second frames through motion/refill, and recovery from an unreadable slot animation. Generated fixtures cover varied border colors, oval/rectangular/concave/triangular loops, gray feeders on beige, shaded white cups, changed feeder routes, blockers, unknowns, empty loops, and obscured queues. Palette tests use 2, 5 and 18 colors, new color additions, ID retention and relearning fewer colors. Replay checks require the four visibly different collectors to remain distinct.
 
 Build, lint and APK signature checks passed. These are host checks, not a complete phone autoplay test. The supplied clip has no completed collector, win or ad transition. Native phone OCR, input/capture compatibility, arbitrary level layouts, memory/battery use and full autonomous completion remain unvalidated. Border/track heuristics can still fail on new graphics; the live status is intended to make failures diagnosable. Hidden square colors are never guessed.
 

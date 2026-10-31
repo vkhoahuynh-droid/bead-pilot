@@ -29,7 +29,7 @@ public final class AutoDetectionReplayTest {
         for(int i=0;i<7;i++){
             Capture.Frame pixels=frame(ImageIO.read(new File(directory,String.format("%03d.png",i+1))));Capture.Frame timed=new Capture.Frame(pixels.width,pixels.height,pixels.pixels,1_000_000_000L+i*500_000_000L);
             Vision.Observation o=perception.read(timed);for(int j=0;j<4;j++)if(o.slots[j]>=0)o.progress[j]=0;
-            tracker.update(o);
+            tracker.update(o);if(i==6){java.util.HashSet<Integer>ids=new java.util.HashSet<>();for(int color:o.slots)if(color>=0)ids.add(color);check(ids.size()==4,"holding color IDs remain distinct over the live sequence");}
         }
         check(tracker.speedSamples()>=3,"movement becomes ready from real frame timestamps without a recording-FPS assumption");
         check(tracker.interval()>.08&&tracker.interval()<.18,"live displacement estimates plausible bead-row speed");
@@ -58,7 +58,8 @@ public final class AutoDetectionReplayTest {
             check(c.rowUnit==5&&c.loopRows>60&&c.loopRows<140,"five-wide row model, frame "+number);
             check(c.themeReady()&&c.backgroundKnown,"theme inferred without marked points");
             Vision.Observation observed=new AutoPerception(c).read(new Capture.Frame(w,h,pixels));
-            check(java.util.Arrays.equals(observed.slots,number==1?new int[]{-1,-1,-1,-1}:new int[]{12,7,5,13}),"empty/occupied holding-slot colors from pixels");
+            if(number==1)check(java.util.Arrays.equals(observed.slots,new int[]{-1,-1,-1,-1}),"empty holding slots stay empty");
+            else {java.util.HashSet<Integer>distinct=new java.util.HashSet<>();for(int id:observed.slots)if(id>=0)distinct.add(id);check(distinct.size()==4,"four different collectors must not collapse into the same learned color");int[]expected={Config.RGB[12],0xffa400ff,Config.RGB[5],Config.RGB[13]};for(int slot=0;slot<4;slot++){check(observed.slots[slot]>=0&&AdaptivePalette.distance(c.palette.rgb(observed.slots[slot]),expected[slot])<1,"learned holding-slot color "+slot+" from pixels");}}
             int eligible=0;for(boolean open:c.clickable)if(open)eligible++;
             if(number==1)check(eligible==3,"only the three raised, unobstructed top squares are selectable");
             for(float[]p:c.slots)check(Math.abs(p[1]-.582)<.04,"slot row stays aligned");

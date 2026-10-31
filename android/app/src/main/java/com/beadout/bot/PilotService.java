@@ -72,6 +72,7 @@ public final class PilotService extends Service {
                         if(type.equals("ocr_request")){
                             if(ocr!=null)ocr.read(j,this::sendObject);
                             else sendObject(new JSONObject().put("cmd","ocr").put("id",j.getLong("id")).put("error","Offline text reader is unavailable").put("words",new JSONArray()));
+                        }else if(type.equals("layout_clear")){detectedLayout=null;
                         }else if(type.equals("layout")){
                             detectedLayout=Config.parse(j.getJSONObject("config"));publish(text);
                         }else if(type.equals("snapshot")){

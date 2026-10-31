@@ -25,7 +25,7 @@ public final class MainActivity extends Activity {
         button(body,"Stop",()->stopService(new Intent(this,PilotService.class)));
         status=new TextView(this);status.setTextSize(15);status.setPadding(0,20,0,20);status.setTextIsSelectable(true);body.addView(status);
         button(body,"Copy recent status",()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(ClipData.newPlainText("Bead Pilot status",PilotService.recentEvents()));Toast.makeText(this,"Recent status copied",Toast.LENGTH_SHORT).show();});
-        button(body,"Show detected board",()->{if(PilotService.preview==null){if(PilotService.active)start("snapshot");}image.setVisibility(image.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);refresh();});
+        button(body,"Show detected board",()->{if(PilotService.active)start("snapshot");image.setVisibility(image.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);refresh();});
         image=new DetectionView();image.setVisibility(View.GONE);body.addView(image,new LinearLayout.LayoutParams(-1,-2));
         if(!Settings.canDrawOverlays(this))button(body,"Allow floating Stop button",()->startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName()))));
         TextView note=new TextView(this);note.setText("Automatic detection is experimental. If the view is unclear, taps pause while the app looks again. Unknown ? squares are obstacles until the game reveals their colors.");note.setTextSize(13);note.setPadding(0,20,0,10);body.addView(note);
