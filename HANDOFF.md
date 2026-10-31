@@ -1,5 +1,19 @@
 # Bead Pilot debugging handoff
 
+## Current development changes (v0.6)
+
+The archive's Android project is now extracted as editable source under `android/` in this repository. The previous v0.5 artifacts in `downloads/` are preserved. The experimental v0.6 APK and SHA-256 file are added there alongside them.
+
+- `AutoLayout` segments visible enclosure structures by background contrast rather than blue hue, separates thin borders from square bodies, retains unknown squares as obstacles, and requires enclosure evidence before declaring exit paths safe.
+- Loop extraction follows the cycle of the observed bead-band skeleton after removing open branches. It supports the tested concave shape without offsetting normals across its indentation. It rejects open, unsupported or intersecting outlines.
+- Feeders are traced outside the observed loop, including bent/upper branches. There are no invented fixed side paths. A drained tail can retain its own previously observed path only with unchanged loop/slots and visible background along the missing portion; occlusion does not qualify.
+- `AutomaticRootMain` rechecks complete geometry before collector taps. Changed geometry requires two consistent observations and resets the tracker, pending plan, slot generations and OCR epoch. Failed detection clears stability; stale OCR and stale frames cannot enable collector taps.
+- `AdaptiveLayoutTest` adds 293 generated-pixel checks: oval, rounded-rectangle and concave loops; six border colors; changing counts and arrangements; bent/upper feeders; flat and unknown squares; same-color touching border; blocked exits; drained/occluded queues; missing geometry and temporal stability. The checks are included in `test-auto.sh`.
+
+The cloud toolchain is at `/workspace/bead-tools`: source `env.sh` for JDK 17, SDK platform 36/build-tools 35.0.0, platform-tools, managed Gradle proxy and CA trust. Work in `/workspace/bead-pilot/android`. Validation runs all three host scripts (3,330 checks), `:app:assembleDebug` and `:app:lintDebug`. The generated v0.6 APK is `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+These changes address confirmed code assumptions, but the specific phone failure has not been reproduced: no new gameplay frames or rooted device were available. The historical real-frame replay suite was not rerun. The generated APK uses a new debug signing certificate, different from the published v0.5 APK, so an in-place update requires the original signing key. The v0.6 APK is supplied under `downloads/`; no GitHub Release was created because release API access is blocked. The following sections retain the historical v0.5 context.
+
 ## Current request and reported bug
 
 The user wants a fresh debugging session because v0.5 is bugging. Their latest clarification: **the square layout changes, the enclosure/border outline color changes, and the loop changes shape between levels.** Exact failure symptoms, current level screenshot and status/error text have not yet been captured. Do not invent a diagnosis or claim it is fixed.

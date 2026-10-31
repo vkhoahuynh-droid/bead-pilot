@@ -1,0 +1,14 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.beadout.bot'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'com.beadout.bot'
+        minSdk 30
+        targetSdk 36
+        versionCode 6
+        versionName '0.6'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_11; targetCompatibility JavaVersion.VERSION_11 }
+}
+dependencies { implementation 'com.google.mlkit:text-recognition:16.0.1' }

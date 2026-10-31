@@ -1,4 +1,8 @@
-# Bead Pilot 0.5
+# Bead Pilot 0.6 (development)
+
+The current editable Android source is in `android/`. The experimental v0.6 APK is [available here](https://github.com/vkhoahuynh-droid/bead-pilot/raw/refs/heads/main/downloads/Bead-Pilot-v0.6.apk). Previous v0.5 artifacts are preserved.
+
+**Installation:** v0.6 uses a different debug signing key and cannot update v0.5 in place. Replacing v0.5 requires uninstalling it first, which removes its local app data/settings, or rebuilding v0.6 with the original signing key. Phone gameplay has not yet been validated.
 
 Automatic rooted Android player for Bead Out. Supports KernelSU Next through `su`.
 
@@ -8,7 +12,9 @@ Automatic rooted Android player for Bead Out. Supports KernelSU Next through `su
 
 No tracing, coordinate entry, or teaching is required. **Show detected board** is an optional preview of the last discovered layout.
 
-The app detects four holding slots, changing square layouts, the loop and both feeders. It checks square height and a collision-free exit through the enclosure, treating other squares and blue walls as obstacles. Black question-mark squares remain obstacles until they reveal their colors when clickable; their hidden colors are not invented. The planner combines observed percentages, moving bead rows and finite feeder queues to choose collectors and replan after reveals.
+The app detects four holding slots, changing square layouts, the loop and both feeders. It checks square height and a collision-free exit through the enclosure, treating other squares and visible border structures as obstacles regardless of hue. Black question-mark squares remain obstacles until they reveal their colors when clickable; their hidden colors are not invented. The planner combines observed percentages, moving bead rows and finite feeder queues to choose collectors and replan after reveals.
+
+The development detector follows a cycle in the observed track skeleton, including concave loops, and traces feeder branches without fixed side coordinates. It rechecks geometry before collector taps and waits for two consistent observations after a shape change. Missing or obscured geometry pauses tapping. A visibly drained queue may reuse its own previously observed path while the same loop and slots remain visible. No manual calibration is required.
 
 After a confirmed win it presses Android Home, waits three seconds, reopens Bead Out and taps Next. It uses bounded Home/reopen recovery after ads, and recognizes the game menu to press Play. Persistent recognition or input failure pauses/stops instead of repeatedly tapping.
 
@@ -22,7 +28,7 @@ Planning is bounded to 60 ms per search, at most twice per second. Performance, 
 
 ## Validation and limitations
 
-Host tests cover simulation, finite feeders, tracking, level recovery, OCR-result interpretation, automatic layout detection, blockers and motion. The supplied gameplay frames detect four slots, nine then five board squares, one loop and two feeders. Synthetic wall and unknown-square edits exercise blocked paths. See VIDEO_FINDINGS.md.
+Host tests cover simulation, finite feeders, tracking, level recovery, OCR-result interpretation and automatic detection. `test-auto.sh` includes generated pixel fixtures with varied square arrangements, six border colors, oval/rounded-rectangle/concave loops, bent and upper feeders, blocked exits, unknown squares, drained queues, occlusion and rejected geometry. These are synthetic regressions, not validation on new phone footage. The optional replay suite requires decoded gameplay frames that are not in this repository; its historical v0.5 findings are described in HANDOFF.md.
 
 **Experimental: actual phone OCR, root capture/input compatibility and a complete autonomous level have not been validated here.** Different track shapes, animations, occlusion and duplicate collector rules may require further changes. A successful build and frame replay do not prove reliable completion of arbitrary levels.
 
