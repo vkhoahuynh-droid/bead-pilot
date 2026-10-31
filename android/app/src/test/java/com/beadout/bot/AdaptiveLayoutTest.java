@@ -87,6 +87,11 @@ public final class AdaptiveLayoutTest {
         for(int i=0;i<cream.length;i++){if((cream[i]&0xffffff)==0xced4df)cream[i]=0xffe5d8bf;if((cream[i]&0xffffff)==0xf5e300)cream[i]=0xffdfdedc;}
         Config whiteCup=new AutoLayout().detect(new Capture.Frame(582,1280,cream)).config;
         check(whiteCup.buttons.size()==7,"a shaded white cup is still detected on a beige background");
+        Capture.Frame wallSource=scene(1,0xffeeeeee,7,false,true,false);int[]elbow=wallSource.pixels.clone();
+        for(int y=1000;y<1048;y++)for(int x=448;x<490;x++)if(y<1016||x<464)elbow[y*582+x]=0xffeeeeee;
+        for(int y=1000;y<1004;y++)for(int x=484;x<490;x++)elbow[y*582+x]=0xffeeeeee;
+        Config corners=new AutoLayout().detect(new Capture.Frame(582,1280,elbow)).config;
+        check(corners.buttons.size()==7,"white wall elbows are not added as phantom cups: "+corners.buttons.size());
         AutoLayout.Stability gate=new AutoLayout.Stability();
         check(!gate.observe(ellipse,582,1280),"one frame cannot enable taps");
         check(gate.observe(ellipse,582,1280),"two stable frames accepted");

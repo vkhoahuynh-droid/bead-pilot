@@ -1,3 +1,21 @@
+# Current continuation — v0.9
+
+User supplied a log stuck alternating Scanning and Waiting for a safe collector with 2/4 active slots, 15 board detections, 12 color groups and increasing movement samples. An inline annotated Level 24 screenshot shows gray and royal-blue collectors both at 50%, distinct cyan beads, several visibly reachable colored cups and some apparent white wall-corner markers. User explicitly wants adaptive, predictive play for progressively harder layouts, rather than rigid refusal while free slots remain. This screenshot is viewable in conversation but not available as a local PNG in this executor; do not claim exact screenshot pixel replay.
+
+Confirmed planner defect: strict search rejected every tap whenever ANY active color's estimated remaining need exceeded its visible inventory plus slack. That is invalid as a universal veto for approximate pixel observations. New ObservedPlannerTest reproduces the old no-action result with two active collectors at 50% and known deficits, then verifies observed-mode search selects a different fully supported color and completes it. A cyan (ID 2) collection explicitly leaves royal-blue (ID 1) remaining capacity unchanged except for the royal-blue beads actually present.
+
+Planner.searchObserved is now used by AutomaticRootMain. It checks the proposed new color's supply instead of global stranded state. Six seconds without a tracked percentage decrease enables first-action partial recovery only with at most two occupied slots and at least five observed matching beads; this can use a third slot while preserving one spare. Fourth-slot root guard still needs forecast completion, and observed search rejects partial fourth-slot trials. Unknown/zero-visible/duplicate proposals remain excluded. Legacy exact-inventory search remains available for reference tests. Taps are considered before WAIT forecasts, no-action cached plans are periodically retried even on identical state keys, and search beam/depth scale with initial board complexity within the existing budget. Model resets rebuild the planner and stall timer.
+
+Runtime diagnostics include percentages, palette IDs/RGB, approximate visible matching inventory, eligible count, expansion count and a concrete wait reason. Tracker now says Movement tracked rather than predictive play ready. Source snapshot preview caches image + matching serialized geometry and refreshes at most every four seconds during play; still RAM-only with no screenshot history/files.
+
+Geometry regression: a generated white wall elbow makes v0.8 detect eight cups in a seven-cup fixture. The new interior-material check rejects the elbow. Strongly overlapping cup subcomponents are merged instead of separately blocking one another. The original real-frame suite and adaptive shape suite pass. The exact phone square count after this change remains unverified.
+
+3,507 host checks passed: planner/search 1,220; finite feeders 1,607; level cycle 49; recorded model 76; perception/tracking 51; automatic interpretation 34; adaptive palette 39; adaptive layout pixels 306; actual-frame replay 105; observed-planner recovery 20. Recovery tests include hidden/blocked 15/30/60-position boards and multi-color FIFO dependency chains, plus negative tests for hidden, duplicate, zero-supply and partial-fourth choices. Build/lint/signature must pass before delivery; actual phone OCR and full autonomous level completion are still unverified. This is an approximate online planner, not a guarantee of solving arbitrary unknown hard levels.
+
+APK versionCode 9, same signing key as v0.8. Publish versioned APK/source/checksum under downloads/ and use GitHub HTTPS links. Historical context follows.
+
+---
+
 # Current continuation — v0.8
 
 User reported v0.7 stuck waiting for two observed feeder paths, provided an inline Level 24 screenshot (beige theme, white enclosure, triangular loop, gray bead stretches/slate cups), and clarified that layouts and color sets change every level, with additional/fewer/new colors. The exact inline PNG is not a local file in this executor; do not claim an exact screenshot pixel replay. The original Level 23 video is still locally available.

@@ -27,9 +27,13 @@ public final class AutomaticRootMain {
     private Tracker tracker;
     private Planner planner;
     private int plannedColors;
+    private long lastCollectionProgress;
+    private int[]lastColors,lastRemaining;
+    private boolean lastStalled;
     private LevelCycle cycle=new LevelCycle();
     private Input input;
     private Bitmap lastPreview;
+    private JSONObject previewLayout;
     private long previewTime;
     private long epoch,sequence,lastOcr,lastFull,lastStatus,lastPlan,lastRefresh,modelSince,lastGeometryGood,geometryFailureSince;
     private final int[]slotGeneration=new int[4];
@@ -76,15 +80,15 @@ public final class AutomaticRootMain {
     private void emit(String type,String text){try{emitObject(new JSONObject().put("type",type).put("text",text));}catch(JSONException ignored){}}
     private void emitObject(JSONObject json){synchronized(outputLock){System.out.println(json);System.out.flush();}}
     private boolean fresh(OcrResult r,long now){return r!=null&&r.ok&&now-r.request.time<2_500_000_000L;}
-    private void resetModel(){emit("layout_clear","");lastGeometryGood=0;geometryFailureSince=0;config=null;perception=null;tracker=null;plan=null;planKey="";tapBefore=null;layoutStability.clear();stableBoard=0;lastBoard="";epoch++;Arrays.fill(slotGeneration,0);}
+    private void resetModel(){planner=null;lastColors=null;lastRemaining=null;lastCollectionProgress=System.nanoTime();lastStalled=false;emit("layout_clear","");lastGeometryGood=0;geometryFailureSince=0;config=null;perception=null;tracker=null;plan=null;planKey="";tapBefore=null;layoutStability.clear();stableBoard=0;lastBoard="";epoch++;Arrays.fill(slotGeneration,0);}
     private void apply(AutoLayout.Detection d,Capture.Frame frame,String focus)throws Exception{
         layoutStability.clear();latest.set(null);latestFull.set(null);lastFull=0;
-        config=d.config;config.packageName=focus;gamePackage=focus;perception=new AutoPerception(config);tracker=new Tracker(config.interval,true);epoch++;Arrays.fill(slotGeneration,0);modelSince=System.nanoTime();lastGeometryGood=modelSince;geometryFailureSince=0;lastBoard="";stableBoard=0;plan=null;tapBefore=null;planKey="";
+        planner=null;config=d.config;config.packageName=focus;gamePackage=focus;perception=new AutoPerception(config);tracker=new Tracker(config.interval,true);lastColors=null;lastRemaining=null;lastCollectionProgress=System.nanoTime();epoch++;Arrays.fill(slotGeneration,0);modelSince=System.nanoTime();lastGeometryGood=modelSince;geometryFailureSince=0;lastBoard="";stableBoard=0;plan=null;tapBefore=null;planKey="";
         emit("focus",gamePackage);emitObject(new JSONObject().put("type","layout").put("config",config.json()).put("text",d.summary));
         rememberFrame(frame);sendPreview();emit("status",d.summary+". Measuring movement before tapping.");
     }
-    private void rememberFrame(Capture.Frame frame){if(lastPreview!=null)lastPreview.recycle();lastPreview=frame.bitmap();previewTime=System.nanoTime();}
-    private void sendPreview(){if(lastPreview==null){emit("status","Start automatic detection and open the game first");return;}try(ByteArrayOutputStream bytes=new ByteArrayOutputStream()){lastPreview.compress(Bitmap.CompressFormat.PNG,100,bytes);emit("snapshot",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP));}catch(IOException ignored){}}
+    private void rememberFrame(Capture.Frame frame){if(lastPreview!=null)lastPreview.recycle();lastPreview=frame.bitmap();previewTime=System.nanoTime();try{previewLayout=config==null?null:config.json();}catch(JSONException e){previewLayout=null;}}
+    private void sendPreview(){if(lastPreview==null){emit("status","Start automatic detection and open the game first");return;}try(ByteArrayOutputStream bytes=new ByteArrayOutputStream()){if(previewLayout!=null)emitObject(new JSONObject().put("type","layout").put("config",previewLayout).put("text","Last game view with matching detected geometry"));else emit("layout_clear","");lastPreview.compress(Bitmap.CompressFormat.PNG,100,bytes);emit("snapshot",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP));}catch(IOException|JSONException ignored){}}
     private void requestOcr(Capture.Frame f,long now){
         OcrRequest old=pending.get();if(old!=null&&now-old.time<3_000_000_000L||now-lastOcr<500_000_000L)return;
         boolean full=config==null||cycle.transitioning()||now-lastFull>2_000_000_000L;int left=0,top=0,width=f.width,height=f.height;
@@ -164,15 +168,21 @@ public final class AutomaticRootMain {
                         lastGeometryGood=System.nanoTime();geometryFailureSince=0;geometryChecked=true;
                     }
                     Vision.Observation observation=perception.read(frame);progress(observation,now);
+                    if(now-previewTime>4_000_000_000L)rememberFrame(frame);
                     String board=observation.boardKey();stableBoard=board.equals(lastBoard)?stableBoard+1:0;lastBoard=board;
                     if(stableBoard<1){Thread.sleep(150);continue;}
-                    if(planner==null||plannedColors!=config.palette.size()){plannedColors=config.palette.size();planner=new Planner(plannedColors,64,5,60);plan=null;planKey="";}
+                    if(planner==null||plannedColors!=config.palette.size()){plannedColors=config.palette.size();planner=new Planner(plannedColors,Math.min(128,Math.max(32,config.buttons.size()*4)),config.buttons.size()>20?7:5,60);plan=null;planKey="";}
                     Planner.State state=tracker.update(observation);state.unlockValues=config.unlockValues.clone();
+                    if(lastColors==null||!Arrays.equals(lastColors,state.colors)){lastCollectionProgress=now;}
+                    else for(int i=0;i<4;i++)if(state.colors[i]>=0&&state.remaining[i]<lastRemaining[i])lastCollectionProgress=now;
+                    lastColors=state.colors.clone();lastRemaining=state.remaining.clone();
+                    boolean stalled=now-lastCollectionProgress>6_000_000_000L;
+                    if(stalled!=lastStalled){plan=null;planKey="";lastStalled=stalled;}
                     if(tracker.settling()){status(now,"Waiting for a filled square to leave");Thread.sleep(150);continue;}
                     if(tapBefore!=null){if(!tapBefore.equals(board)){tapBefore=null;failedTaps=0;}else if(now-tapAt>4_000_000_000L){if(tapKey!=null)blockedTaps.put(tapKey,now+30_000_000_000L);if(++failedTaps>=2){requested=false;scanning=false;emit("error","A square did not move twice. Automatic play paused; no repeated taps.");}throw new IllegalStateException("Square did not move; checking the layout again");}}
                     for(int i=0;i<state.board.length;i++){float[]p=config.buttons.get(i);String k=Math.round(p[0]*100)+":"+Math.round(p[1]*100);Long until=blockedTaps.get(k);if(until!=null&&until>now)state.board[i]=-1;}
                     int occupied=0;for(int c:state.colors)if(c>=0)occupied++;
-                    String key=state.key();if((plan==null||now-lastPlan>500_000_000L)&&!key.equals(planKey)){plan=planner.search(state,false);planKey=key;lastPlan=now;}
+                    String key=state.key();if(plan==null||now-lastPlan>500_000_000L&&(!key.equals(planKey)||plan.firstAction()<0)){plan=planner.searchObserved(state,stalled);planKey=key;lastPlan=now;}
                     OcrResult currentOcr=latest.get();boolean ocrReady=fresh(currentOcr,now)&&currentOcr.request.epoch==epoch;
                     if(geometryChecked&&requested&&tapBefore==null&&tracker.speedSamples()>=3&&ocrReady&&plan!=null&&plan.firstAction()>=0){
                         int index=plan.firstAction();if(index>=config.buttons.size()||state.board[index]<0){plan=null;continue;}
@@ -183,8 +193,8 @@ public final class AutomaticRootMain {
                         }
                     }
                     long heap=(Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory())/1048576;
-                    String activity=!geometryChecked?"Scanning; taps paused":tracker.speedSamples()<3?"Measuring bead speed":plan==null||plan.firstAction()<0?"Waiting for a safe collector":"Automatic play";
-                    status(now,!ocrReady?"Loading offline text recognition; taps paused":(requested?activity:"Preview only")+": "+occupied+"/4 slots; "+config.buttons.size()+" board squares; "+config.palette.size()+" observed colors. "+tracker.note+"; "+tracker.speedSamples()+" movement samples\nJava heap "+heap+"MiB; "+capture.backend);
+                    String activity=tapBefore!=null?"Collector selected; watching transfer":!geometryChecked?"Scanning; taps paused":tracker.speedSamples()<3?"Measuring bead speed":plan==null||plan.firstAction()<0?"Waiting: "+(plan==null?planner.diagnosis(state):plan.reason):stalled?"Replanning stalled collectors":"Automatic play";
+                    status(now,!ocrReady?"Loading offline text recognition; taps paused":(requested?activity:"Preview only")+": "+occupied+"/4 slots; "+config.buttons.size()+" board squares; "+config.palette.size()+" observed colors. "+tracker.note+"; "+tracker.speedSamples()+" movement samples\n"+collectorStatus(state)+"; eligible "+eligible(state)+"; search "+(plan==null?0:plan.expanded)+" states\nJava heap "+heap+"MiB; "+capture.backend);
                 }catch(Exception e){
                     String message=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();status(now,message);
                     if(message.contains("direction reversed")){
@@ -196,6 +206,11 @@ public final class AutomaticRootMain {
                 Thread.sleep(250);
             }
         }
+    }
+    private static int eligible(Planner.State state){int n=0;for(int c:state.board)if(c>=0)n++;return n;}
+    private String collectorStatus(Planner.State state){int[]visible=state.supply(config.palette.size());StringBuilder b=new StringBuilder("Fill");
+        for(int i=0;i<4;i++)if(state.colors[i]>=0){int c=state.colors[i];b.append(" S").append(i+1).append('=').append(100-state.remaining[i]).append("% ").append(config.palette.describe(c)).append(" visible=").append(visible[c]);}
+        return b.toString();
     }
     private void status(long now,String message){if(now-lastStatus<900_000_000L)return;emit("status",message);lastStatus=now;}
     private boolean tap(long token,float[]point,Capture.Frame frame,Capture capture)throws Exception{

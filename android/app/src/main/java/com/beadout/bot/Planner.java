@@ -131,7 +131,8 @@ public final class Planner {
         public final List<Event> actions;
         public final State predicted;
         public final int expanded;
-        Result(List<Event> actions,State predicted,int expanded){this.actions=actions;this.predicted=predicted;this.expanded=expanded;}
+        public final String reason;
+        Result(List<Event> actions,State predicted,int expanded,String reason){this.actions=actions;this.predicted=predicted;this.expanded=expanded;this.reason=reason;}
         public int firstAction(){return actions.isEmpty()?WAIT:actions.get(0).index;}
     }
     private final int colorCount, width, depth;
@@ -182,7 +183,25 @@ public final class Planner {
     public Result search(State initial){
         return search(initial,true);
     }
-    public Result search(State initial,boolean allowDuplicateCollectors){
+    public Result search(State initial,boolean allowDuplicateCollectors){return search(initial,allowDuplicateCollectors,false,false);}
+    /** Approximate pixel inventory must not veto unrelated moves because an old collector is short. */
+    public Result searchObserved(State initial,boolean stalled){return search(initial,false,true,stalled);}
+    private boolean observedChoice(State s,int action,boolean partial){
+        int color=s.board[action];if(color<0||s.empty()<0)return false;
+        int occupied=0;for(int active:s.colors){if(active==color)return false;if(active>=0)occupied++;}
+        int visible=s.supply(colorCount)[color];
+        return visible+s.inventorySlack>=CAPACITY||(partial&&occupied<3&&visible>=5);
+    }
+    public String diagnosis(State s){
+        int reachable=0,duplicate=0,backed=0;int[]supply=s.supply(colorCount);
+        for(int color:s.board)if(color>=0){reachable++;boolean repeated=false;for(int active:s.colors)repeated|=active==color;if(repeated)duplicate++;else if(supply[color]>0)backed++;}
+        if(s.empty()<0)return "All holding slots occupied";
+        if(reachable==0)return "No known reachable square detected";
+        if(duplicate==reachable)return "Only colors already collecting are reachable";
+        if(backed==0)return "Reachable colors have no confidently matched visible beads";
+        return "No improving sequence predicted; "+backed+" bead-backed choices";
+    }
+    private Result search(State initial,boolean allowDuplicateCollectors,boolean observed,boolean stalled){
         long deadline=System.nanoTime()+budgetNanos;
         ArrayList<Node> beam=new ArrayList<>();beam.add(new Node(initial.copy(),new ArrayList<>(),0));
         Node best=beam.get(0);int expanded=0;
@@ -190,12 +209,15 @@ public final class Planner {
             PriorityQueue<Node> next=new PriorityQueue<>(Comparator.comparingDouble(n->n.score));
             HashSet<String> seen=new HashSet<>();
             outer:for(Node parent:beam){
-                for(int action=-1;action<parent.s.board.length;action++){
+                for(int order=0;order<=parent.s.board.length;order++){
+                    // Try live choices before potentially expensive multi-lap waiting forecasts.
+                    int action=order==parent.s.board.length?-1:order;
                     if(System.nanoTime()>deadline)break outer;
                     State s=parent.s.copy();ArrayList<Event> path=new ArrayList<>(parent.path);
                     if(action>=0){
                         if(!allowDuplicateCollectors){boolean duplicate=false;for(int color:s.colors)duplicate|=color>=0&&color==s.board[action];if(duplicate)continue;}
-                        if(!s.tap(action)||s.stranded(colorCount))continue;
+                        if(observed&&!observedChoice(s,action,stalled&&d==0))continue;
+                        if(!s.tap(action)||!observed&&s.stranded(colorCount))continue;
                         path.add(new Event(action,s.time));
                     }else{
                         boolean active=false;for(int c:s.colors)active|=c>=0;
@@ -218,6 +240,8 @@ public final class Planner {
             if(next.isEmpty())break;
             beam=new ArrayList<>(next);beam.sort((a,b)->Double.compare(b.score,a.score));
         }
-        return new Result(best.path,best.s,expanded);
+        String reason=best.path.isEmpty()?diagnosis(initial):best.path.get(0).index==WAIT?"Waiting for predicted collection":"Collector sequence improves predicted progress";
+        if(expanded==0&&System.nanoTime()>=deadline)reason="Search budget expired before evaluating a useful choice";
+        return new Result(best.path,best.s,expanded,reason);
     }
 }

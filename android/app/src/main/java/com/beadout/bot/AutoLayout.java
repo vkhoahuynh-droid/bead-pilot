@@ -149,11 +149,12 @@ public final class AutoLayout {
         // Preserve complete cup rims/shading. Opening is only a way to separate
         // a cup connected to a long same-color wall, not a replacement for its
         // original raised footprint.
-        for(Region r:components(classes,g.w,g.h,true,true).regions)if(isBox(g,r))boxes.add(r);
-        for(Region r:components(thickClasses(classes,g.w,g.h,Math.max(1,(int)Math.round(g.w*.012))),g.w,g.h,true,true).regions)if(isBox(g,r)){
+        for(Region r:components(classes,g.w,g.h,true,true).regions)if(isBox(g,r,m))boxes.add(r);
+        for(Region r:components(thickClasses(classes,g.w,g.h,Math.max(1,(int)Math.round(g.w*.012))),g.w,g.h,true,true).regions)if(isBox(g,r,m)){
             boolean overlaps=false;for(Region old:boxes)if(Math.abs(old.cx()-r.cx())<Math.max(old.w,r.w)*.5&&Math.abs(old.cy()-r.cy())<Math.max(old.h,r.h)*.5)overlaps=true;
             if(!overlaps)boxes.add(r);
         }
+        mergeCupParts(boxes);
         boxes.sort(Comparator.comparingInt((Region r)->Math.round(r.y/(float)(g.w*.06))).thenComparingInt(r->r.x));
         c.buttons.clear();c.clickable=new boolean[boxes.size()];c.unknownBoxes=new boolean[boxes.size()];c.unlockValues=new int[boxes.size()];
         byte[]walls=wallMask(g,boxes,slotY);
@@ -167,7 +168,24 @@ public final class AutoLayout {
         }
         for(int i=0;i<boxes.size();i++)if(c.clickable[i])for(int j=0;j<boxes.size();j++)if(i!=j&&!c.clickable[j]&&escape(g,walls,boxes,j,i,slotY))c.unlockValues[i]+=c.unknownBoxes[j]?2:1;
     }
-    private static boolean isBox(Grid g,Region r){return r.w>=g.w*.055&&r.w<=g.w*.20&&r.h>=g.w*.045&&r.h<=g.w*.25&&r.area>(double)r.w*r.h*.3;}
+    private static boolean isBox(Grid g,Region r,byte[]mask){
+        if(!(r.w>=g.w*.055&&r.w<=g.w*.20&&r.h>=g.w*.045&&r.h<=g.w*.25&&r.area>(double)r.w*r.h*.3))return false;
+        // Wall elbows are compact components too, but their middle is floor.
+        // Require object material inside the proposed cup, not just an L rim.
+        int x=r.x+r.w/2,y=r.y+Math.min(r.h/2,r.w/2),solid=0;
+        for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)if(mask[g.at(x+dx,y+dy)]!=0)solid++;
+        return solid>=6;
+    }
+    private static void mergeCupParts(ArrayList<Region>boxes){
+        for(int i=0;i<boxes.size();i++)for(int j=i+1;j<boxes.size();){Region a=boxes.get(i),b=boxes.get(j);
+            int l=Math.max(a.x,b.x),t=Math.max(a.y,b.y),r=Math.min(a.x+a.w,b.x+b.w),bottom=Math.min(a.y+a.h,b.y+b.h);
+            double overlap=Math.max(0,r-l)*Math.max(0,bottom-t);
+            if(Math.min(a.w,b.w)>.5*Math.max(a.w,b.w)&&overlap>.65*Math.min(a.w*a.h,b.w*b.h)){
+                int right=Math.max(a.x+a.w,b.x+b.w),low=Math.max(a.y+a.h,b.y+b.h);a.x=Math.min(a.x,b.x);a.y=Math.min(a.y,b.y);a.w=right-a.x;a.h=low-a.y;
+                if(b.tag==16)a.tag=16;a.area+=b.area;a.sx+=b.sx;a.sy+=b.sy;boxes.remove(j);
+            }else j++;
+        }
+    }
     private static ArrayList<Box>slotCandidates(Grid g){
         byte[]bright=new byte[g.n],colored=new byte[g.n];
         for(int y=(int)(g.h*.30);y<g.h*.86;y++)for(int x=0;x<g.w;x++){

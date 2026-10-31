@@ -6,7 +6,7 @@ public final class GameplayRegressionTest {
     private static int checks;
     private static void check(boolean ok,String message){checks++;if(!ok)throw new AssertionError(message);}
     private static int[] chunks(int...colors){int[]a=new int[colors.length*10];for(int i=0;i<a.length;i++)a[i]=colors[i/10];return a;}
-    private static Planner.State start(){
+    static Planner.State start(){
         // Incoming order at pickup. Split the yellow run at the sampling origin.
         int[]ring=new int[100];int at=0;
         for(int i=0;i<5;i++)ring[at++]=Y;
