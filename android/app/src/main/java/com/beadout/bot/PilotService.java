@@ -114,11 +114,7 @@ public final class PilotService extends Service {
             scheduledAction=null;
         }
         if("auto".equals(action)||"preview".equals(action)){
-            if(scheduledAction!=null)handler.removeCallbacks(scheduledAction);
-            publish("Switch to Bead Out. Automatic detection starts in five seconds.");
-            String cmd="auto".equals(action)?"auto":"inspect";
-            scheduledAction=()->{try{sendObject(new JSONObject().put("cmd",cmd).put("package",getSharedPreferences("pilot",MODE_PRIVATE).getString("lastGamePackage","")));}catch(JSONException ignored){}};
-            handler.postDelayed(scheduledAction,5000);
+            scheduleAutomatic("auto".equals(action)?"auto":"inspect",5000);
         }else if("snapshot".equals(action))send("snapshot");
         else if("capture".equals(action)){
             send("pause");
@@ -134,13 +130,27 @@ public final class PilotService extends Service {
         else if("inspect".equals(action)||"play".equals(action)||"probe".equals(action)||"pause".equals(action))send(action);
         return START_NOT_STICKY;
     }
+    private void cancelScheduled(){if(scheduledAction!=null)handler.removeCallbacks(scheduledAction);scheduledAction=null;}
+    private void scheduleAutomatic(String command,long delay){
+        cancelScheduled();
+        publish(delay>0?"Switch to Bead Out. Automatic detection starts in five seconds.":"Starting automatic play; keep Bead Out open.");
+        scheduledAction=()->{scheduledAction=null;try{sendObject(new JSONObject().put("cmd",command).put("package",getSharedPreferences("pilot",MODE_PRIVATE).getString("lastGamePackage","")));}catch(JSONException ignored){}};
+        if(delay==0)scheduledAction.run();else handler.postDelayed(scheduledAction,delay);
+    }
+    private void pauseAutomatic(){cancelScheduled();send("pause");publish("Pausing automatic play");}
+    private void floatingButton(LinearLayout row,String label,Runnable action){
+        Button button=new Button(this);button.setText(label);button.setTextSize(11);button.setAllCaps(false);button.setMinWidth(0);button.setMinimumWidth(0);button.setMinHeight(0);button.setMinimumHeight(0);button.setPadding(0,0,0,0);button.setOnClickListener(v->action.run());
+        row.addView(button,new LinearLayout.LayoutParams(0,(int)(42*getResources().getDisplayMetrics().density),1));
+    }
     private void showOverlay(){
         if(!Settings.canDrawOverlays(this))return;
         wm=getSystemService(WindowManager.class);overlay=new LinearLayout(this);overlay.setOrientation(LinearLayout.VERTICAL);overlay.setBackgroundColor(0xdd203329);
         overlayStatus=new TextView(this);overlayStatus.setTextColor(Color.WHITE);overlayStatus.setTextSize(11);overlayStatus.setMaxLines(3);
         int dp=(int)(180*getResources().getDisplayMetrics().density);overlayStatus.setWidth(dp);overlayStatus.setPadding(8,4,8,0);overlayStatus.setText(status);overlay.addView(overlayStatus);
-        LinearLayout controls=new LinearLayout(this);overlay.addView(controls);
-        Button stop=new Button(this);stop.setText("STOP");stop.setOnClickListener(v->stopSelf());controls.addView(stop);
+        LinearLayout controls=new LinearLayout(this);overlay.addView(controls,new LinearLayout.LayoutParams(dp,-2));
+        floatingButton(controls,"Start",()->scheduleAutomatic("auto",0));
+        floatingButton(controls,"Pause",this::pauseAutomatic);
+        floatingButton(controls,"Stop",this::stopSelf);
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(-2,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_SECURE,PixelFormat.TRANSLUCENT);
         p.gravity=Gravity.BOTTOM|Gravity.RIGHT;p.y=12;

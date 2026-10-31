@@ -1,10 +1,14 @@
-# Bead Pilot 0.9 — experimental
+# Bead Pilot 0.10 — experimental
 
-[Download v0.9 APK](https://github.com/vkhoahuynh-droid/bead-pilot/raw/refs/heads/main/downloads/Bead-Pilot-v0.9.apk)
+[Download v0.10 APK](https://github.com/vkhoahuynh-droid/bead-pilot/raw/refs/heads/main/downloads/Bead-Pilot-v0.10.apk)
 
 Editable Android sources are in `android/`; versioned APK/source downloads are in `downloads/`.
 
-**If v0.6 is installed, uninstall Bead Pilot first**, then install v0.9 and grant root again. This removes Bead Pilot settings, not Bead Out progress. v0.9 uses the original v0.5/v0.7/v0.8 signing certificate; v0.6 used a different certificate. v0.5, v0.7 and v0.8 can update in place.
+**If v0.6 is installed, uninstall Bead Pilot first**, then install v0.10 and grant root again. This removes Bead Pilot settings, not Bead Out progress. v0.10 uses the original v0.5/v0.7/v0.8/v0.9 signing certificate; v0.6 used a different certificate. v0.5, v0.7, v0.8 and v0.9 can update in place.
+
+v0.10 adds **Start / Pause / Stop** to the draggable floating panel. Floating Start begins immediately while Bead Out remains open; Start in the main app retains the five-second switch-to-game delay. Pause cancels delayed starts and keeps the panel available for Start again. Stop ends the service and removes the panel. Enable **Allow floating controls** if the overlay permission is missing. Drag the status text to move the panel.
+
+This UI update passed assemble/debug and lint. The planner/detector are unchanged from v0.9; their 3,507 host checks were last run for v0.9. The floating controls still need phone-side touch/layout validation.
 
 v0.9 fixes a reproduced planner freeze: an estimated bead shortage for one already active collector no longer vetoes unrelated new collectors. Automatic play evaluates the new choice's visible support instead of requiring perfect inventory for all existing colors. After six seconds without tracked collection progress it may add a partial but bead-backed third color, leaving a spare slot; that recovery cannot occupy the fourth slot. The fourth-slot completion guard, unknown-color exclusion and duplicate-collector restriction remain. Queue order and access-unlock scores still guide bounded lookahead. Search width/depth scale with board size, no-action results are retried, and live choices are evaluated before expensive waiting forecasts.
 

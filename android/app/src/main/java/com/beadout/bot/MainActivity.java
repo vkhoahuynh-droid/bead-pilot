@@ -19,7 +19,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state){super.onCreate(state);
         ScrollView scroll=new ScrollView(this);LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);int pad=(int)(20*getResources().getDisplayMetrics().density);body.setPadding(pad,pad,pad,pad);scroll.addView(body);setContentView(scroll);
         TextView title=new TextView(this);title.setText("Bead Pilot");title.setTextSize(28);body.addView(title);
-        TextView instructions=new TextView(this);instructions.setText("Press Start, then switch to Bead Out. The app finds the holding slots, squares, loop and feeder queues itself. Screen images stay in RAM.");instructions.setPadding(0,16,0,16);instructions.setTextSize(16);body.addView(instructions);
+        TextView instructions=new TextView(this);instructions.setText("Press Start, then switch to Bead Out. The app finds the holding slots, squares, loop and feeder queues itself. Screen images stay in RAM. Floating Start and Pause work while you stay in the game; drag the status area to move the panel.");instructions.setPadding(0,16,0,16);instructions.setTextSize(16);body.addView(instructions);
         button(body,"Start automatic play",()->{start("auto");Toast.makeText(this,"Switch to Bead Out now",Toast.LENGTH_LONG).show();});
         button(body,"Pause",()->{if(PilotService.active)start("pause");});
         button(body,"Stop",()->stopService(new Intent(this,PilotService.class)));
@@ -27,7 +27,7 @@ public final class MainActivity extends Activity {
         button(body,"Copy recent status",()->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(ClipData.newPlainText("Bead Pilot status",PilotService.recentEvents()));Toast.makeText(this,"Recent status copied",Toast.LENGTH_SHORT).show();});
         button(body,"Show detected board",()->{if(PilotService.active)start("snapshot");image.setVisibility(image.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);refresh();});
         image=new DetectionView();image.setVisibility(View.GONE);body.addView(image,new LinearLayout.LayoutParams(-1,-2));
-        if(!Settings.canDrawOverlays(this))button(body,"Allow floating Stop button",()->startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName()))));
+        if(!Settings.canDrawOverlays(this))button(body,"Allow floating controls",()->startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName()))));
         TextView note=new TextView(this);note.setText("Automatic detection is experimental. If the view is unclear, taps pause while the app looks again. Unknown ? squares are obstacles until the game reveals their colors.");note.setTextSize(13);note.setPadding(0,20,0,10);body.addView(note);
         if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},1);
     }

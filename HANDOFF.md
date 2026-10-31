@@ -1,3 +1,11 @@
+# Current continuation — v0.10 floating controls
+
+User requested Start and Pause in the floating panel. PilotService.showOverlay now uses a compact 180 dp row with equal-width Start, Pause and Stop buttons. Start calls scheduleAutomatic(auto, 0): immediate root auto/re-detection while staying in the game. The app's Start calls the same helper with its existing five-second delay. Floating Pause cancels any scheduled start, sends pause and leaves the panel visible; Stop stops the service/removes the panel. Existing non-focusable overlay and status-text drag handle remain. MainActivity permission label now says Allow floating controls and explains the controls.
+
+Only PilotService, MainActivity, version metadata and docs changed. VersionCode 10/versionName 0.10; same signing key as v0.9. Build and lint passed. The reversible UI-only change did not add tests or rerun unchanged planner/detector tests; the last core run was v0.9's 3,507 host checks. Phone overlay touch/layout and gameplay remain unvalidated here. Preserve source/APK/checksum under downloads/ and share normal GitHub HTTPS URLs.
+
+---
+
 # Current continuation — v0.9
 
 User supplied a log stuck alternating Scanning and Waiting for a safe collector with 2/4 active slots, 15 board detections, 12 color groups and increasing movement samples. An inline annotated Level 24 screenshot shows gray and royal-blue collectors both at 50%, distinct cyan beads, several visibly reachable colored cups and some apparent white wall-corner markers. User explicitly wants adaptive, predictive play for progressively harder layouts, rather than rigid refusal while free slots remain. This screenshot is viewable in conversation but not available as a local PNG in this executor; do not claim exact screenshot pixel replay.
