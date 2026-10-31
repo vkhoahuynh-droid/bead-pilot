@@ -66,6 +66,19 @@ public final class AdaptiveLayoutTest {
         rejected(trayState(-1),"missing holding row cannot be replaced by a lower board row");
         boolean rejected=false;try{detector.detect(trayState(-1),empty);}catch(IllegalStateException expected){rejected=true;}check(rejected,"old tray anchors require visible material, not bare floor");
     }
+    static void highTailChecks(){
+        Capture.Frame base=scene(1,0xffeeeeee,1,false,true,false);BufferedImage image=new BufferedImage(582,1280,BufferedImage.TYPE_INT_RGB);image.setRGB(0,0,582,1280,base.pixels,0,582);Graphics2D g=image.createGraphics();
+        g.setColor(new Color(0xff00b948));g.fillRect(55,0,40,225);g.fillRect(485,0,40,225);
+        g.setColor(new Color(0xffa400ff));g.fillRect(55,0,40,60);g.fillRect(485,0,40,60);
+        g.setColor(new Color(0xff8500ff));g.fillRoundRect(130,850,56,70,8,8);g.dispose();
+        Capture.Frame f=new Capture.Frame(582,1280,image.getRGB(0,0,582,1280,null,0,582));Config c=new AutoLayout().detect(f).config;
+        check(c.feeders.get(0).points.get(c.feeders.get(0).points.size()-1)[0]>.7,"right feeder is first in the automatic model");
+        Vision.Observation o=new AutoPerception(c).read(f);check(o.board.length==1&&o.board[0]>=0,"purple collector is known and reachable");int color=o.board[0],total=0;
+        for(Vision.FeedObservation feed:o.feeds)for(int bead:feed.beads)if(bead==color)total+=o.rowUnit;
+        check(total>=40,"purple only in top 60 pixels remains visible in finite queues");
+        check(o.rightFirst,"automatic observation enables right-first queue draining");
+        for(Config.FeedPath feed:c.feeders)check(feed.points.get(feed.points.size()-1)[1]<.035,"queue path reaches the observed top tail rather than stopping below its colors");
+    }
     public static void main(String[]args){
         for(int shape=0;shape<3;shape++)for(int wall:new int[]{0xff8296eb,0xffe52c31,0xff16a84b,0xfff5e300,0xffeeeeee,0xff505050}){
             Config c=detect(shape,wall,7,false).config;
@@ -113,6 +126,7 @@ public final class AdaptiveLayoutTest {
         Config corners=new AutoLayout().detect(new Capture.Frame(582,1280,elbow)).config;
         check(corners.buttons.size()==7,"white wall elbows are not added as phantom cups: "+corners.buttons.size());
         trayChecks();
+        highTailChecks();
         AutoLayout.Stability gate=new AutoLayout.Stability();
         check(!gate.observe(ellipse,582,1280),"one frame cannot enable taps");
         check(gate.observe(ellipse,582,1280),"two stable frames accepted");

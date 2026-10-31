@@ -21,6 +21,8 @@ public final class AutomaticRootMain {
     private final AtomicReference<OcrRequest>pending=new AtomicReference<>();
     private final AtomicReference<OcrResult>latest=new AtomicReference<>(),latestFull=new AtomicReference<>();
     private final AutoLayout detector=new AutoLayout();
+    private final SceneEvidence sceneEvidence=new SceneEvidence();
+    private boolean startupLaunch;
     private String gamePackage="";
     private Config config;
     private AutoPerception perception;
@@ -46,10 +48,10 @@ public final class AutomaticRootMain {
     private String tapKey;
     private Planner.Result plan;
     private static final class OcrRequest {
-        long id,epoch,time;boolean full;int[]colors,generations;
+        long id,epoch,time;boolean full;int[]colors,generations,signature;
     }
     private static final class OcrResult {
-        OcrRequest request;TextScene scene;boolean ok;
+        OcrRequest request;TextScene scene,navigationScene;boolean ok;
     }
     public static void main(String[]args){AutomaticRootMain player=new AutomaticRootMain();try{
         if(android.os.Process.myUid()!=0)throw new IOException("Grant Bead Pilot root using UID 0");Looper.prepareMainLooper();
@@ -74,7 +76,7 @@ public final class AutomaticRootMain {
     private void acceptOcr(JSONObject j)throws JSONException{
         OcrRequest request=pending.get();if(request==null||j.optLong("id")!=request.id)return;if(!pending.compareAndSet(request,null))return;
         ArrayList<TextScene.Word>words=new ArrayList<>();JSONArray array=j.optJSONArray("words");if(array!=null)for(int i=0;i<array.length();i++){JSONObject w=array.getJSONObject(i);words.add(new TextScene.Word(w.getString("text"),(float)w.getDouble("x"),(float)w.getDouble("y"),(float)w.getDouble("w"),(float)w.getDouble("h")));}
-        OcrResult result=new OcrResult();result.request=request;result.scene=new TextScene(words);result.ok=!j.has("error");latest.set(result);if(request.full)latestFull.set(result);
+        OcrResult result=new OcrResult();result.request=request;result.scene=new TextScene(words);result.ok=!j.has("error");result.navigationScene=request.full&&result.ok?sceneEvidence.update(words,request.time,request.epoch,request.signature):result.scene;latest.set(result);if(request.full)latestFull.set(result);
         if(!result.ok)emit("warning",j.optString("error","Offline text recognition is loading"));
     }
     private void emit(String type,String text){try{emitObject(new JSONObject().put("type",type).put("text",text));}catch(JSONException ignored){}}
@@ -96,7 +98,7 @@ public final class AutomaticRootMain {
         int[]pixels=new int[width*height];for(int y=0;y<height;y++)for(int x=0;x<width;x++)pixels[y*width+x]=f.pixel(left+x,top+y);
         Bitmap bitmap=Bitmap.createBitmap(pixels,width,height,Bitmap.Config.ARGB_8888);
         try(ByteArrayOutputStream bytes=new ByteArrayOutputStream()){
-            bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);OcrRequest request=new OcrRequest();request.id=++sequence;request.time=f.nanos;request.epoch=epoch;request.full=full;request.generations=slotGeneration.clone();request.colors=perception==null?new int[]{-2,-2,-2,-2}:perception.slotColors(f);pending.set(request);
+            bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);OcrRequest request=new OcrRequest();request.id=++sequence;request.time=f.nanos;request.epoch=epoch;request.full=full;if(full){request.signature=new int[96];for(int sy=0;sy<12;sy++)for(int sx=0;sx<8;sx++){int pixel=f.pixel((2*sx+1)*f.width/16,(2*sy+1)*f.height/24);request.signature[sy*8+sx]=((pixel>>21)&7)<<6|((pixel>>13)&7)<<3|((pixel>>5)&7);}}request.generations=slotGeneration.clone();request.colors=perception==null?new int[]{-2,-2,-2,-2}:perception.slotColors(f);pending.set(request);
             emitObject(new JSONObject().put("type","ocr_request").put("id",request.id).put("full",full).put("screenWidth",f.width).put("screenHeight",f.height).put("left",left).put("top",top).put("png",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP)));
             lastOcr=now;if(full)lastFull=now;
         }catch(Exception e){pending.set(null);emit("warning","Text recognition request: "+e.getMessage());}finally{bitmap.recycle();}
@@ -110,7 +112,7 @@ public final class AutomaticRootMain {
         try{
             while(!stopped){long now=System.nanoTime();if(now-heartbeat>8_000_000_000L)throw new IOException("Controller heartbeat lost");
                 if(preview){preview=false;sendPreview();}
-                if(reset){reset=false;resetModel();cycle=new LevelCycle();latest.set(null);latestFull.set(null);lastFull=0;failedTaps=0;blockedTaps.clear();}
+                if(reset){reset=false;startupLaunch=requested;resetModel();cycle=new LevelCycle();latest.set(null);latestFull.set(null);lastFull=0;failedTaps=0;blockedTaps.clear();}
                 if(!scanning){cycle=new LevelCycle();if(capture!=null){capture.close();capture=null;}Thread.sleep(100);continue;}
                 if(capture==null)capture=new Capture();
                 long token=controlVersion.get();
@@ -125,19 +127,26 @@ public final class AutomaticRootMain {
                 if(stopped||!scanning)continue;
                 if(now-frame.nanos>2_000_000_000L){Thread.sleep(30);continue;}
                 requestOcr(frame,now);
-                String focus=focus();if(focus.equals("com.beadout.bot")){status(now,"Waiting for you to return to Bead Out");Thread.sleep(250);continue;}
-                OcrResult text=latestFull.get();boolean wordsFresh=fresh(text,now);boolean win=wordsFresh&&text.scene.win&&buttonColor(frame,text.scene.next,false);boolean menu=wordsFresh&&text.scene.menu&&buttonColor(frame,text.scene.play,true);
+                String focus=focus();
+                AutoLayout.Detection found=null;
+                if(startupLaunch&&requested&&!gamePackage.isEmpty()&&!focus.equals(gamePackage)){
+                    if(!focus.equals("com.beadout.bot"))try{found=detector.detect(frame);}catch(IllegalStateException ignored){}
+                    if(found!=null){gamePackage=focus;startupLaunch=false;}
+                    else{startupLaunch=false;try{launchGame(token);status(now,"Opening Bead Out; checking for Play or a level");}catch(Exception e){cycle.retryAfterError(System.nanoTime());status(now,"Game launch retry pending: "+e.getMessage());}Thread.sleep(250);continue;}
+                }
+                if(focus.equals(gamePackage))startupLaunch=false;
+                if(focus.equals("com.beadout.bot")){status(now,"Waiting for you to return to Bead Out");Thread.sleep(250);continue;}
+                OcrResult text=latestFull.get();boolean wordsFresh=fresh(text,now)&&text.request.epoch==epoch;boolean win=wordsFresh&&text.navigationScene.win&&buttonColor(frame,text.navigationScene.next,false);boolean menu=wordsFresh&&text.navigationScene.gameMenu(frame)&&buttonColor(frame,text.navigationScene.play,true);
                 if(gamePackage.isEmpty()&&(win||menu))gamePackage=focus;
                 boolean game=!gamePackage.isEmpty()&&focus.equals(gamePackage);
-                AutoLayout.Detection found=null;
                 if(win||menu||cycle.transitioning()){
                     if(!win&&!menu&&game)try{found=detector.detect(frame);}catch(IllegalStateException ignored){}
                     boolean ready=found!=null;
                     LevelCycle.Action action=cycle.update(now,win,game,ready,menu);
                     try{
                         if(action==LevelCycle.Action.HOME){if(pressHome(token)){cycle.homeSent(System.nanoTime());status(now,"Android Home for three seconds");}}
-                        else if(action==LevelCycle.Action.NEXT){if(text!=null&&game&&tap(token,text.scene.next,frame,capture)){cycle.nextSent(System.nanoTime());status(now,"Next tapped; waiting two seconds before Android Home");}}
-                        else if(action==LevelCycle.Action.PLAY_MENU){if(text!=null&&game&&tap(token,text.scene.play,frame,capture)){cycle.menuSent(System.nanoTime());status(now,"Game menu recognized. Play tapped; automatic play remains on.");}}
+                        else if(action==LevelCycle.Action.NEXT){if(text!=null&&game&&tap(token,text.navigationScene.next,frame,capture)){cycle.nextSent(System.nanoTime());status(now,"Next tapped; waiting two seconds before Android Home");}}
+                        else if(action==LevelCycle.Action.PLAY_MENU){if(text!=null&&game&&tap(token,text.navigationScene.play,frame,capture)){cycle.menuSent(System.nanoTime());status(now,"Game menu recognized. Play tapped; automatic play remains on.");}}
                         else if(action==LevelCycle.Action.RESET){resetModel();if(found!=null)apply(found,frame,focus);status(now,"New board detected. Continuous automatic play resumes.");}
                         if(cycle.retryWaiting())status(now,"Transition taking longer; automatic play stays on and retries after a cooldown");
                     }catch(Exception e){cycle.retryAfterError(System.nanoTime());status(now,"Transition retry pending: "+e.getMessage());}
@@ -200,7 +209,7 @@ public final class AutomaticRootMain {
                     }
                     long heap=(Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory())/1048576;
                     String activity=tapBefore!=null?"Collector selected; watching transfer":!geometryChecked?"Scanning; taps paused":tracker.speedSamples()<3?"Measuring bead speed":plan==null||plan.firstAction()<0?"Waiting: "+(plan==null?planner.diagnosis(state):plan.reason):stalled?"Replanning stalled collectors":"Automatic play";
-                    status(now,!ocrReady?"Loading offline text recognition; taps paused":(requested?activity:"Preview only")+": "+occupied+"/4 slots; "+config.buttons.size()+" board squares; "+config.palette.size()+" observed colors. "+tracker.note+"; "+tracker.speedSamples()+" movement samples\n"+collectorStatus(state)+"; eligible "+eligible(state)+"; search "+(plan==null?0:plan.expanded)+" states\nJava heap "+heap+"MiB; "+capture.backend);
+                    status(now,!ocrReady?"Loading offline text recognition; taps paused":(requested?activity:"Preview only")+": "+occupied+"/4 slots; "+config.buttons.size()+" board squares; "+config.palette.size()+" observed colors. "+tracker.note+"; "+tracker.speedSamples()+" movement samples\n"+collectorStatus(state)+"; eligible "+eligible(state)+"; "+choiceStatus(state)+"; search "+(plan==null?0:plan.expanded)+" states\nJava heap "+heap+"MiB; "+capture.backend);
                 }catch(Exception e){
                     String message=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();status(now,message);
                     if(message.contains("direction reversed")){
@@ -214,6 +223,11 @@ public final class AutomaticRootMain {
         }finally{if(capture!=null)capture.close();}
     }
     private static int eligible(Planner.State state){int n=0;for(int c:state.board)if(c>=0)n++;return n;}
+    private String choiceStatus(Planner.State state){int[]visible=state.supply(config.palette.size());StringBuilder b=new StringBuilder("choices");
+        for(int i=0;i<state.board.length;i++)if(state.board[i]>=0){int c=state.board[i];b.append(' ').append(config.palette.describe(c)).append(" visible=").append(visible[c]).append(" unlock=").append(state.unlockValues[i]);}
+        b.append("; queues");for(Planner.Lane lane:state.lanes)for(int i=0;i<lane.feeds.size();i++)b.append(i==0?" right=":" left=").append(lane.feeds.get(i).queue.size()*lane.unit);
+        return b.toString();
+    }
     private String collectorStatus(Planner.State state){int[]visible=state.supply(config.palette.size());StringBuilder b=new StringBuilder("Fill");
         for(int i=0;i<4;i++)if(state.colors[i]>=0){int c=state.colors[i];b.append(" S").append(i+1).append('=').append(100-state.remaining[i]).append("% ").append(config.palette.describe(c)).append(" visible=").append(visible[c]);}
         return b.toString();
@@ -225,7 +239,7 @@ public final class AutomaticRootMain {
     }
     private boolean pressHome(long token)throws Exception{synchronized(controlLock){if(stopped||!requested||token!=controlVersion.get())return false;if(input==null)input=new Input();input.home();return true;}}
     private static boolean buttonColor(Capture.Frame frame,float[]p,boolean green){if(p==null)return false;int x=Math.round(p[0]*frame.width),y=Math.round(p[1]*frame.height),yes=0,n=0;
-        for(int dy=-24;dy<=24;dy+=4)for(int dx=-40;dx<=40;dx+=4){int c=frame.pixel(x+dx,y+dy),r=(c>>16)&255,g=(c>>8)&255,b=c&255;n++;if(green?g>r*1.08&&g>b*1.2:b>r+30&&b>g-15&&g>45)yes++;}return yes>n*.24;
+        for(int dy=-24;dy<=24;dy+=4)for(int dx=-40;dx<=40;dx+=4){int c=frame.pixel(x+dx,y+dy),r=(c>>16)&255,g=(c>>8)&255,b=c&255;n++;if(green?g>110&&g>r*1.08&&g>b*1.2:b>r+30&&b>g-15&&g>45)yes++;}return yes>n*.24;
     }
     private static String command(String...args)throws Exception{Process p=new ProcessBuilder(args).redirectErrorStream(true).start();Thread timeout=new Thread(()->{try{if(!p.waitFor(4,TimeUnit.SECONDS))p.destroyForcibly();}catch(InterruptedException e){Thread.currentThread().interrupt();}},"android-command-timeout");timeout.setDaemon(true);timeout.start();
         try(BufferedReader reader=new BufferedReader(new InputStreamReader(p.getInputStream()))){StringBuilder b=new StringBuilder();String line;while((line=reader.readLine())!=null){if(b.length()+line.length()>1_048_576)throw new IOException("Android command response too large");b.append(line).append('\n');}if(p.waitFor()!=0)throw new IOException("Android system command failed");return b.toString().trim();}finally{p.destroy();}

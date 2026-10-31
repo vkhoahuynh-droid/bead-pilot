@@ -16,6 +16,7 @@ public final class Planner {
         public final ArrayList<Run> runs = new ArrayList<>();
         public final ArrayList<Feed> feeds=new ArrayList<>();
         public final int unit;
+        public boolean rightFirst;
         public double next, interval;
         public Lane(int[] beads, double next, double interval) {
             this(beads,next,interval,1);
@@ -32,6 +33,7 @@ public final class Planner {
         }
         Lane copy() {
             Lane l = new Lane(new int[0], next, interval,unit);
+            l.rightFirst=rightFirst;
             for (Run r : runs) l.runs.add(r.copy());
             for(Feed f:feeds)l.feeds.add(f.copy());
             return l;
@@ -50,7 +52,10 @@ public final class Planner {
         void fedTick(boolean consumed){
             rotate(1,consumed);
             if(consumed){if(!runs.isEmpty()&&runs.get(runs.size()-1).color==-1)runs.get(runs.size()-1).count++;else runs.add(new Run(-1,1));}
-            for(Feed feed:feeds)if(!feed.queue.runs.isEmpty()&&cell(feed.entry)==-1){int color=feed.queue.head();feed.queue.rotate(1,true);insertAtGap(feed.entry,color);}
+            for(Feed feed:feeds)if(!feed.queue.runs.isEmpty()){
+                if(cell(feed.entry)==-1){int color=feed.queue.head();feed.queue.rotate(1,true);insertAtGap(feed.entry,color);}
+                if(rightFirst)break; // Automatic feeds are ordered right, then left.
+            }
         }
         int size() { int n = 0; for (Run r : runs) n += r.count; return n; }
         int head() { return runs.get(0).color; }
@@ -116,7 +121,7 @@ public final class Planner {
         String key() {
             StringBuilder b=new StringBuilder(Arrays.toString(board)).append(Arrays.toString(colors)).append(Arrays.toString(remaining));
             b.append('S').append(inventorySlack).append(Arrays.toString(unlockValues)).append('U').append(unlockScore);
-            for(Lane l:lanes) { b.append('|').append(l.unit).append(':').append(Math.round((l.next-time)*1000)).append(':');
+            for(Lane l:lanes) { b.append('|').append(l.unit).append(l.rightFirst?'R':'A').append(':').append(Math.round((l.next-time)*1000)).append(':');
                 for(Run r:l.runs)b.append(r.color).append(',').append(r.count).append(';');
                 for(Feed f:l.feeds){b.append('F').append(f.entry).append(':');for(Run r:f.queue.runs)b.append(r.color).append(',').append(r.count).append(';');}}
             return b.toString();
@@ -190,14 +195,15 @@ public final class Planner {
         int color=s.board[action];if(color<0||s.empty()<0)return false;
         int occupied=0;for(int active:s.colors){if(active==color)return false;if(active>=0)occupied++;}
         int visible=s.supply(colorCount)[color];
-        return visible+s.inventorySlack>=CAPACITY||(partial&&occupied<3&&visible>=5);
+        return visible+s.inventorySlack>=CAPACITY||(partial&&occupied<3&&(visible>=5||s.unlockValues[action]>0));
     }
     public String diagnosis(State s){
-        int reachable=0,duplicate=0,backed=0;int[]supply=s.supply(colorCount);
-        for(int color:s.board)if(color>=0){reachable++;boolean repeated=false;for(int active:s.colors)repeated|=active==color;if(repeated)duplicate++;else if(supply[color]>0)backed++;}
+        int reachable=0,duplicate=0,backed=0,unlocks=0;int[]supply=s.supply(colorCount);
+        for(int i=0;i<s.board.length;i++){int color=s.board[i];if(color>=0){reachable++;boolean repeated=false;for(int active:s.colors)repeated|=active==color;if(repeated)duplicate++;else{if(supply[color]>0)backed++;if(s.unlockValues[i]>0)unlocks++;}}}
         if(s.empty()<0)return "All holding slots occupied";
         if(reachable==0)return "No known reachable square detected";
         if(duplicate==reachable)return "Only colors already collecting are reachable";
+        if(backed==0&&unlocks>0)return "No matched beads; "+unlocks+" choices can unlock further squares";
         if(backed==0)return "Reachable colors have no confidently matched visible beads";
         return "No improving sequence predicted; "+backed+" bead-backed choices";
     }
@@ -230,7 +236,7 @@ public final class Planner {
                     if(seen.size()>width*8)seen.clear(); // Bound retained cache memory, even on large boards.
                     // Evaluate reachable completion, but keep the immediate state for further branching.
                     State future=s.copy();advance(future,future.time+lap(future)*1.05,false);
-                    double value=score(future,initial.time);
+                    double value=score(future,initial.time)+(observed?(s.unlockScore-initial.unlockScore)*250:0);
                     Node node=new Node(s,path,value);
                     if(next.size()<width)next.add(node);
                     else if(value>next.peek().score){next.poll();next.add(node);}

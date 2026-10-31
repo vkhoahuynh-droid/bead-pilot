@@ -85,7 +85,7 @@ public final class AutoLayout {
         if(gap<slotWidth*.45||gap>slotWidth*3)throw new IllegalStateException("Four matching squares are too far from the loop exit to be holding slots");
         c.slotLift=slotWidth*.4/g.h;
         ArrayList<float[]>normalized=normalize(loop,g.w,g.h);c.lanes.add(normalized);c.trackOutline.addAll(normalize(geometry.outline,g.w,g.h));
-        byte[]beads=new byte[g.n];for(int y=(int)(g.h*.055);y<bottom;y++)for(int x=0;x<g.w;x++){int i=y*g.w+x;if(g.color(i))beads[i]=1;}
+        byte[]beads=new byte[g.n];for(int y=0;y<bottom;y++)for(int x=0;x<g.w;x++){int i=y*g.w+x;if(g.color(i))beads[i]=1;}
         beads=close(beads,g.w,g.h);
         ArrayList<Double>pitches=new ArrayList<>();
         // Remove the observed loop band and its interior, rather than cutting the
@@ -116,13 +116,13 @@ public final class AutoLayout {
             if(route.size()<slotWidth)continue;
             double reach=0;for(float[]p:route)reach=Math.max(reach,loopPath.nearest(p[0]/g.w,p[1]/g.h)[1]);
              // A leftover strip of the loop is not a feeder.
-            route=smoothOpen(route,2);
+            route=smoothOpen(route,2);double baseRouteLength=0;for(int i=1;i<route.size();i++)baseRouteLength+=Math.hypot(route.get(i)[0]-route.get(i-1)[0],route.get(i)[1]-route.get(i-1)[1]);extendTail(route,shape,g.w,g.h,width);
             ArrayList<float[]>feed=new ArrayList<>();float[]junction=loopPath.point(join);
             feed.add(new float[]{junction[0]*g.w,junction[1]*g.h});feed.addAll(route);
             Config.FeedPath fp=new Config.FeedPath(0,normalize(feed,g.w,g.h));fp.skipConnector=true;
             boolean tracked=false;if(previous!=null&&sameLoop(c,previous,g.w,g.h))for(Config.FeedPath old:previous.feeders)tracked|=feedOverlap(fp,old,g.w,g.h);
-            double routeLength=0;for(int i=1;i<route.size();i++)routeLength+=Math.hypot(route.get(i)[0]-route.get(i-1)[0],route.get(i)[1]-route.get(i-1)[1]);
-            if(reach<width*1.5||reach<width*2.5&&routeLength<Math.sqrt(body.area)&&!tracked)continue;
+
+            if(reach<width*1.5||reach<width*2.5&&baseRouteLength<Math.sqrt(body.area)&&!tracked)continue;
             feeds.add(fp);
             float[]head=route.get(route.size()-1);
             double pitch=measurePitch(g.frame,head[0]*2,head[1]*2,slotWidth*2);
@@ -147,7 +147,7 @@ public final class AutoLayout {
             }
         }
         if(feeds.size()!=2)throw new IllegalStateException("Found "+feeds.size()+" feeder paths; waiting for two observed feeder paths");
-        feeds.sort(Comparator.comparingDouble(f->f.points.get(0)[0]));c.feeders.addAll(feeds);
+        feeds.sort((a,b)->Float.compare(b.points.get(b.points.size()-1)[0],a.points.get(a.points.size()-1)[0]));c.feeders.addAll(feeds);
         c.pitch=pitches.isEmpty()?slotWidth*2*.12:median(pitches);c.pitch=Math.max(4,Math.min(18,c.pitch));
         c.loopRows=Math.max(20,Math.min(400,(int)Math.round(new PathGeometry(c.lanes.get(0),true,g.frame.width,g.frame.height).length/c.pitch)));
         refreshSquares(g,c,slotY);
@@ -390,6 +390,13 @@ public final class AutoLayout {
             byte tag=core[y*w+x];for(int dy=-radius;dy<=radius;dy++)for(int dx=-radius;dx<=radius;dx++)if(m[(y+dy)*w+x+dx]==tag)out[(y+dy)*w+x+dx]=tag;
         }return out;
     }
+    private static void extendTail(ArrayList<float[]>route,byte[]body,int w,int h,double width){
+        if(route.size()<3)return;float[]end=route.get(route.size()-1),before=route.get(Math.max(0,route.size()-8));
+        double dx=end[0]-before[0],dy=end[1]-before[1],norm=Math.hypot(dx,dy);if(norm<.1)return;dx/=norm;dy/=norm;
+        float[]last=end;for(int t=1;t<=width*2;t++){double x=end[0]+dx*t,y=end[1]+dy*t;int xx=(int)Math.round(x),yy=(int)Math.round(y);
+            if(xx<0||xx>=w||yy<0||yy>=h||body[yy*w+xx]==0)break;last=new float[]{(float)x,(float)y};}
+        if(last!=end)route.add(last);
+    }
     private static byte[]fillHoles(byte[]shape,int w,int h){
         byte[]outside=new byte[shape.length];int[]q=new int[shape.length];int head=0,tail=0;
         for(int i=0;i<shape.length;i++)if((i<w||i>=shape.length-w||i%w==0||i%w==w-1)&&shape[i]==0){outside[i]=1;q[tail++]=i;}
@@ -404,6 +411,8 @@ public final class AutoLayout {
             for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int xx=x+dx,yy=y+dy;if(xx<0||xx>=w||yy<0||yy>=h)continue;int k=yy*w+xx;if(body[k]!=0&&distance[k]<0){distance[k]=distance[at]+1;q[tail++]=k;}}
         }
         double x=0,y=0,count=0;for(int i=0;i<body.length;i++)if(distance[i]>=max-width*.4){x+=i%w;y+=i/w;count++;}
+        int top=h;for(int i=0;i<body.length;i++)if(body[i]!=0)top=Math.min(top,i/w);
+        if(top<w*.03){x=0;y=0;count=0;int limit=Math.min(h,top+Math.max(3,(int)(width*.25)));for(int yy=top;yy<limit;yy++)for(int xx=0;xx<w;xx++)if(body[yy*w+xx]!=0){x+=xx;y+=yy;count++;}}
         if(count==0)return longestRoute(skeleton,w,h,toe);x/=count;y/=count;
         int end=-1;double nearest=Double.POSITIVE_INFINITY;
         for(int i=0;i<skeleton.length;i++)if(skeleton[i]!=0&&distance[i]>=0){double d=Math.hypot(i%w-x,i/w-y);if(d<nearest){nearest=d;end=i;}}

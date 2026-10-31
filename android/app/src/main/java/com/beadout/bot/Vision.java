@@ -17,7 +17,7 @@ public final class Vision {
         final int[]progress={-1,-1,-1,-1};
         int rowUnit=1;
         final ArrayList<FeedObservation> feeds=new ArrayList<>();
-        boolean topologyValid=true;
+        boolean topologyValid=true,rightFirst=false;
         final long nanos;
         int unknown,total;
         Observation(int[]slots,int[]board,long nanos){this.slots=slots;this.board=board;this.nanos=nanos;}

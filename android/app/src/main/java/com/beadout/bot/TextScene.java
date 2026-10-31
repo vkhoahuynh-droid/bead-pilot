@@ -12,6 +12,7 @@ public final class TextScene {
     public final List<Word>words;
     public final float[]next,play;
     public final boolean win,menu;
+    private final boolean menuCandidate;
     public TextScene(List<Word>words){
         this.words=words;boolean congrats=false,level=false,home=false;Word next=null,play=null;
         for(Word word:words){String s=word.text.toLowerCase(Locale.ROOT).trim();
@@ -21,7 +22,16 @@ public final class TextScene {
             if(word.y>.25&&word.y<.78&&word.x>.2&&word.x<.8&&s.matches("level(?:\\b.*|[0-9]+)"))level=true;
             if(word.y>.85&&s.equals("home"))home=true;
         }
-        win=congrats&&next!=null;menu=play!=null&&level&&home;this.next=next==null?null:new float[]{next.x,next.y};this.play=play==null?null:new float[]{play.x,play.y};
+        win=congrats&&next!=null;menuCandidate=play!=null&&level;menu=menuCandidate&&home;this.next=next==null?null:new float[]{next.x,next.y};this.play=play==null?null:new float[]{play.x,play.y};
+    }
+    public boolean gameMenu(Capture.Frame frame){
+        if(menu)return true;if(!menuCandidate)return false;
+        // The game home has a blue navigation footer and a warm-colored house
+        // badge. These support a missed Home glyph; Play + LEVEL alone do not.
+        int blue=0,n=0,warm=0,house=0;
+        for(float y=.94f;y<.99f;y+=.01f)for(float x=.08f;x<.93f;x+=.06f){int c=frame.pixel((int)(x*frame.width),(int)(y*frame.height)),r=(c>>16)&255,g=(c>>8)&255,b=c&255;n++;if(b>r+30&&b>g&&b>70)blue++;}
+        for(float y=.865f;y<.935f;y+=.01f)for(float x=.44f;x<.57f;x+=.02f){int c=frame.pixel((int)(x*frame.width),(int)(y*frame.height)),r=(c>>16)&255,g=(c>>8)&255,b=c&255;house++;if(r>140&&g>90&&r>g*.9&&g>b*1.15)warm++;}
+        return blue>n*.55&&warm>house*.15;
     }
     public static int percent(String text){
         String s=text.trim().replace('O','0').replace('o','0').replace('S','5').replace('I','1').replace('|','1').replace(" ","");

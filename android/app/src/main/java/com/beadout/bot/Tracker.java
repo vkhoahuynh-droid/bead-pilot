@@ -93,7 +93,7 @@ public final class Tracker {
         }
         previous=o;Planner.State s=new Planner.State(o.board);s.inventorySlack=o.rowUnit*4;
         for(int i=0;i<4;i++){s.colors[i]=o.slots[i];s.remaining[i]=o.slots[i]>=0?remaining[i]:0;}
-        for(int[]lane:o.lanes)s.lanes.add(new Planner.Lane(lane,interval/2,interval,o.rowUnit));
+        for(int[]lane:o.lanes){Planner.Lane model=new Planner.Lane(lane,interval/2,interval,o.rowUnit);model.rightFirst=o.rightFirst;s.lanes.add(model);}
         for(Vision.FeedObservation feed:o.feeds)s.lanes.get(feed.lane).addFeed(feed.entry,feed.beads);
         note=speedSamples>=3?"Movement tracked":"Measuring bead movement";return s;
     }

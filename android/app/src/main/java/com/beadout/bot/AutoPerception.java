@@ -34,7 +34,7 @@ public final class AutoPerception {
     public Vision.Observation read(Capture.Frame f){
         learn(f);
         int[]board=new int[c.buttons.size()];for(int i=0;i<board.length;i++){float[]p=c.buttons.get(i);board[i]=i<c.unknownBoxes.length&&c.unknownBoxes[i]?Vision.UNKNOWN:objectColor(rgb(f,p[0],p[1]));if(board[i]>=0&&(i>=c.clickable.length||!c.clickable[i]))board[i]=Vision.EMPTY;}
-        Vision.Observation o=new Vision.Observation(slotColors(f),board,f.nanos);o.rowUnit=c.rowUnit;
+        Vision.Observation o=new Vision.Observation(slotColors(f),board,f.nanos);o.rowUnit=c.rowUnit;o.rightFirst=true;
         PathGeometry loop=new PathGeometry(c.lanes.get(0),true,f.width,f.height);int n=c.loopRows;int[]ring=new int[n];
         for(int i=0;i<n;i++){float[]p=loop.point((i+.5)*loop.length/n);int v=color(rgb(f,p[0],p[1]));o.total++;if(v==Vision.UNKNOWN){o.unknown++;v=Vision.EMPTY;}ring[i]=v;}
         o.lanes.add(ring);o.fixedLoops.set(0);

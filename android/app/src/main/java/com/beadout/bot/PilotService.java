@@ -34,7 +34,7 @@ public final class PilotService extends Service {
     private static final java.util.ArrayDeque<String> events=new java.util.ArrayDeque<>();
     public static synchronized String recentEvents(){return String.join("\n",events);}
     private static synchronized void remember(String value){
-        String item=value.length()>400?value.substring(0,400):value;
+        String item=value.length()>800?value.substring(0,800):value;
         if(!events.isEmpty()&&events.peekLast().endsWith(item))return;
         events.addLast(new java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.US).format(new java.util.Date())+"  "+item);
         while(events.size()>20)events.removeFirst();
