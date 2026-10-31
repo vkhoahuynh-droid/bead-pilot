@@ -56,7 +56,9 @@ public final class AutoLayout {
         return detect(frame,null);
     }
     public Detection detect(Capture.Frame frame,Config previous){
-        Grid g=new Grid(frame);ArrayList<Box>candidates=slotCandidates(g);List<List<Box>>quads=quads(candidates,g);
+        Grid g=new Grid(frame);ArrayList<Box>candidates=slotCandidates(g);
+        List<Box>anchored=anchoredSlots(g,candidates,previous);if(anchored!=null)return build(g,anchored,previous);
+        List<List<Box>>quads=quads(candidates,g);
         if(quads.isEmpty())throw new IllegalStateException("Looking for the four holding slots");
         String failure="Looking for a closed track";
         for(List<Box>quad:quads){
@@ -79,6 +81,8 @@ public final class AutoLayout {
             Box b=quad.get(i);c.slots.add(new float[]{(float)(b.x/g.w),(float)(b.y/g.h)});slotWidth+=b.r.w/4.0;
             int color=b.empty?g.rgb[g.at(b.x,b.y)]:mixWhite(g.bg,.45);c.emptySlotRgb[i]=color;c.emptySlotKnown[i]=true;
         }
+        double gap=slotY-loop.get(0)[1];
+        if(gap<slotWidth*.45||gap>slotWidth*3)throw new IllegalStateException("Four matching squares are too far from the loop exit to be holding slots");
         c.slotLift=slotWidth*.4/g.h;
         ArrayList<float[]>normalized=normalize(loop,g.w,g.h);c.lanes.add(normalized);c.trackOutline.addAll(normalize(geometry.outline,g.w,g.h));
         byte[]beads=new byte[g.n];for(int y=(int)(g.h*.055);y<bottom;y++)for(int x=0;x<g.w;x++){int i=y*g.w+x;if(g.color(i))beads[i]=1;}
@@ -111,11 +115,15 @@ public final class AutoLayout {
             ArrayList<float[]>route=feederRoute(shape,sk,g.w,g.h,toe,slotWidth);
             if(route.size()<slotWidth)continue;
             double reach=0;for(float[]p:route)reach=Math.max(reach,loopPath.nearest(p[0]/g.w,p[1]/g.h)[1]);
-            if(reach<width*1.5)continue; // A leftover strip of the loop is not a feeder.
+             // A leftover strip of the loop is not a feeder.
             route=smoothOpen(route,2);
             ArrayList<float[]>feed=new ArrayList<>();float[]junction=loopPath.point(join);
             feed.add(new float[]{junction[0]*g.w,junction[1]*g.h});feed.addAll(route);
-            Config.FeedPath fp=new Config.FeedPath(0,normalize(feed,g.w,g.h));fp.skipConnector=true;feeds.add(fp);
+            Config.FeedPath fp=new Config.FeedPath(0,normalize(feed,g.w,g.h));fp.skipConnector=true;
+            boolean tracked=false;if(previous!=null&&sameLoop(c,previous,g.w,g.h))for(Config.FeedPath old:previous.feeders)tracked|=feedOverlap(fp,old,g.w,g.h);
+            double routeLength=0;for(int i=1;i<route.size();i++)routeLength+=Math.hypot(route.get(i)[0]-route.get(i-1)[0],route.get(i)[1]-route.get(i-1)[1]);
+            if(reach<width*1.5||reach<width*2.5&&routeLength<Math.sqrt(body.area)&&!tracked)continue;
+            feeds.add(fp);
             float[]head=route.get(route.size()-1);
             double pitch=measurePitch(g.frame,head[0]*2,head[1]*2,slotWidth*2);
             if(pitch>0)pitches.add(pitch);
@@ -131,6 +139,11 @@ public final class AutoLayout {
                 if(emptyTail(g,old,match<0?null:feeds.get(match),width)){
                     if(match<0)feeds.add(old);else feeds.set(match,old);
                 }
+            }
+        }
+        if(feeds.size()>2&&previous!=null&&previous.feeders.size()==2&&sameLoop(c,previous,g.w,g.h)){
+            outer:for(int i=0;i<feeds.size();i++)for(int j=0;j<feeds.size();j++)if(i!=j&&feedOverlap(feeds.get(i),previous.feeders.get(0),g.w,g.h)&&feedOverlap(feeds.get(j),previous.feeders.get(1),g.w,g.h)){
+                Config.FeedPath first=feeds.get(i),second=feeds.get(j);feeds.clear();feeds.add(first);feeds.add(second);break outer;
             }
         }
         if(feeds.size()!=2)throw new IllegalStateException("Found "+feeds.size()+" feeder paths; waiting for two observed feeder paths");
@@ -198,16 +211,36 @@ public final class AutoLayout {
         for(Region r:components(colorClasses(g,colored),g.w,g.h,true,true).regions)if(r.w>g.w*.055&&r.w<g.w*.19&&r.h>r.w*.5&&r.h<r.w*1.75&&r.area>(double)r.w*r.h*.35){Box b=new Box(r,false);boolean duplicate=false;for(Box old:out)if(Math.hypot(old.x-b.x,old.y-b.y)<r.w*.5){duplicate=true;break;}if(!duplicate)out.add(b);}
         return out;
     }
+    private static List<Box>anchoredSlots(Grid g,ArrayList<Box>candidates,Config previous){
+        if(previous==null||previous.slots.size()!=4||!Vision.nearColor(g.bg,previous.backgroundRgb,10))return null;
+        ArrayList<Box>row=new ArrayList<>();double width=previous.slotLift*g.h/.4;if(width<g.w*.04||width>g.w*.2)return null;
+        for(int i=0;i<4;i++){float[]point=previous.slots.get(i);double x=point[0]*g.w,y=point[1]*g.h;Box found=null;double best=g.w*.04;
+            for(Box b:candidates){double d=Math.hypot(b.x-x,b.y-y);if(d<best){best=d;found=b;}}
+            if(found==null){int support=0,total=0;for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int at=g.at(x+dx*width*.22,y+dy*width*.22);total++;if(!Vision.nearColor(g.rgb[at],g.bg,6)&&(g.color(at)||Vision.nearColor(g.rgb[at],previous.emptySlotRgb[i],10)))support++;}
+                if(support<total*.55)return null;
+                Region r=new Region();r.x=(int)(x-width*.5);r.y=(int)(y-width*.35);r.w=(int)width;r.h=(int)(width*.7);r.area=r.w*r.h;r.sx=(long)(x*r.area);r.sy=(long)(y*r.area);found=new Box(r,false);
+            }
+            Box fixed=new Box(found.r,found.empty);fixed.x=x;fixed.y=y;row.add(fixed);
+        }return row;
+    }
     private static List<List<Box>>quads(ArrayList<Box>boxes,Grid g){
-        ArrayList<List<Box>>out=new ArrayList<>();
-        HashSet<String>seen=new HashSet<>();
-        for(Box seed:boxes){ArrayList<Box>row=new ArrayList<>();for(Box b:boxes)if(Math.abs(b.y-seed.y)<g.w*.025&&b.y<g.h*.82)row.add(b);row.sort(Comparator.comparingDouble(b->b.x));
-            for(int i=0;i+3<row.size();i++){
-                List<Box>q=new ArrayList<>(row.subList(i,i+4));double d=(q.get(3).x-q.get(0).x)/3,center=(q.get(0).x+q.get(3).x)/2;
-                if(d<g.w*.09||d>g.w*.2||Math.abs(center-g.w*.5)>g.w*.09)continue;
-                boolean good=true;for(int j=0;j<3;j++)if(Math.abs((q.get(j+1).x-q.get(j).x)-d)>d*.22)good=false;
-                String key=q.get(0).r.x+":"+q.get(0).r.y+":"+q.get(3).r.x+":"+q.get(3).r.y;
-                if(good&&seen.add(key))out.add(q);
+        ArrayList<List<Box>>out=new ArrayList<>();HashSet<String>seen=new HashSet<>();
+        // Three visible cups/empty pockets can establish regular spacing; the
+        // fourth still needs visible tray material at its inferred position.
+        search:for(Box a:boxes)for(Box b:boxes)if(b.x>a.x&&Math.abs(a.y-b.y)<g.w*.04)for(int steps=1;steps<=3;steps++){
+            double d=(b.x-a.x)/steps;if(d<g.w*.09||d>g.w*.2)continue;
+            for(int column=0;column+steps<4;column++){
+                double left=a.x-column*d,center=left+1.5*d;if(Math.abs(center-g.w*.5)>g.w*.09)continue;
+                Box[]found=new Box[4];ArrayList<Double>ys=new ArrayList<>(),widths=new ArrayList<>();
+                for(int i=0;i<4;i++){double best=Double.POSITIVE_INFINITY;for(Box p:boxes){double dx=Math.abs(p.x-left-i*d),dy=Math.abs(p.y-a.y);if(dx>d*.22||dy>g.w*.04)continue;double score=dx+dy*.5;if(score<best){best=score;found[i]=p;}}if(found[i]!=null){ys.add(found[i].y);widths.add((double)found[i].r.w);}}
+                if(ys.size()<3)continue;double y=median(ys),width=median(widths);if(y>g.h*.82)continue;
+                String key=Math.round(left/2)+":"+Math.round(y/2)+":"+Math.round(d/2);if(!seen.add(key))continue;
+                ArrayList<Box>row=new ArrayList<>();boolean valid=true;
+                for(int i=0;i<4;i++){Box p=found[i];double x=left+i*d;if(p==null){int support=0;for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)if(g.color(g.at(x+dx*width*.2,y+dy*width*.2)))support++;if(support<6){valid=false;break;}
+                        Region r=new Region();r.x=(int)(x-width*.5);r.y=(int)(y-width*.35);r.w=(int)width;r.h=(int)(width*.7);r.area=r.w*r.h;r.sx=(long)(x*r.area);r.sy=(long)(y*r.area);p=new Box(r,false);}
+                    Box fixed=new Box(p.r,p.empty);fixed.x=x;fixed.y=y;row.add(fixed);
+                }
+                if(valid)out.add(row);if(out.size()>=64)break search;
             }
         }out.sort(Comparator.comparingDouble(q->q.get(0).y));return out;
     }

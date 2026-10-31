@@ -6,6 +6,16 @@ public final class AutomaticModeTest {
     static int checks;
     static void check(boolean ok,String message){checks++;if(!ok)throw new AssertionError(message);}
     static TextScene.Word word(String text,float x,float y){return new TextScene.Word(text,x,y,.08f,.02f);}
+    static Vision.Observation partial(long time,int[]colors,int[]progress){Vision.Observation o=new Vision.Observation(colors,new int[]{4},time);o.rowUnit=5;o.total=40;int[]rows=new int[40];Arrays.fill(rows,4);o.lanes.add(rows);o.fixedLoops.set(0);for(int i=0;i<4;i++)o.progress[i]=progress[i];return o;}
+    static void partialReads()throws Exception{
+        Tracker t=new Tracker(.125,true);int[]colors={0,1,2,3};boolean waiting=false;
+        try{t.update(partial(1_000_000_000L,colors,new int[]{50,-1,50,-1}));}catch(Exception e){waiting=e.getMessage().startsWith("Reading existing");}check(waiting,"missing percentages pause without inventing initial capacities");
+        waiting=false;try{t.update(partial(1_200_000_000L,colors,new int[]{-1,50,-1,-1}));}catch(Exception e){waiting=e.getMessage().startsWith("Reading existing");}check(waiting,"partial OCR reads are retained across requests");
+        Planner.State s=t.update(partial(1_400_000_000L,colors,new int[]{-1,-1,-1,10}));check(Arrays.equals(s.remaining,new int[]{50,50,50,90}),"split OCR results initialize four correct capacities");
+        t.resetMotion();s=t.update(partial(1_600_000_000L,colors,new int[]{-1,-1,-1,-1}));check(Arrays.equals(s.remaining,new int[]{50,50,50,90})&&t.completions()==0,"motion reacquisition preserves collector progress");
+        t=new Tracker(.125,true);try{t.update(partial(2_000_000_000L,colors,new int[]{50,50,50,-1}));}catch(Exception ignored){}
+        int[]changed={0,1,4,3};waiting=false;try{t.update(partial(2_200_000_000L,changed,new int[]{-1,-1,-1,10}));}catch(Exception e){waiting=true;}check(waiting,"a changed slot color cannot inherit another collector's cached percentage");
+    }
     public static void main(String[]args)throws Exception{
         for(int n=0;n<=100;n+=5)check(TextScene.percent(n+"%")==n,"percentage "+n);
         check(TextScene.percent("5O %")==50,"OCR zero confusion normalized");
@@ -29,6 +39,7 @@ public final class AutomaticModeTest {
         Planner.State rowState=new Planner.State(new int[]{0});int[]rowBeads=new int[100];Arrays.fill(rowBeads,20,100,1);Planner.Lane lane=new Planner.Lane(rowBeads,0,.1,5);lane.addFeed(50,new int[0]);rowState.lanes.add(lane);rowState.tap(0);Planner.advance(rowState,2,false);
         check(rowState.completed==1&&rowState.beadCount()==400&&lane.size()==100,"20 five-bead rows fill 100 without shrinking loop positions");
         Planner.State hidden=new Planner.State(new int[]{-2});check(!hidden.tap(0),"concealed square cannot be tapped");
+        partialReads();
         System.out.println("PASS: "+checks+" automatic-mode interpretation checks");
     }
 }

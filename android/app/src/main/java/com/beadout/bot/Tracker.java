@@ -5,7 +5,7 @@ import java.util.*;
 /** Validates conservation of beads and learns circulation from observed color boundaries. */
 public final class Tracker {
     private Vision.Observation previous,reference;
-    private final int[] remaining=new int[4];
+    private final int[] remaining=new int[4],initialColor={-2,-2,-2,-2},initialProgress={-1,-1,-1,-1};
     private double interval;
     private int speedSamples;
     private final ArrayDeque<Double> motionTimes=new ArrayDeque<>(),motionSteps=new ArrayDeque<>();
@@ -20,6 +20,7 @@ public final class Tracker {
     public void expectTap(int color,int slot){tapped=true;pendingColor=color;pendingSlot=slot;}
     public double interval(){return interval;}
     public int speedSamples(){return speedSamples;}
+    public void resetMotion(){reference=null;speedSamples=0;motionTimes.clear();motionSteps.clear();}
     public int completions(){return completions;}
     public boolean settling(){for(long t:finishingSince)if(t!=0)return true;return false;}
     public Planner.State update(Vision.Observation o)throws Exception{
@@ -72,7 +73,12 @@ public final class Tracker {
         if(o.lanes.isEmpty()||o.confidence()<.85)throw new Exception("Waiting for an unobscured board");
         for(int color:o.slots)if(color==Vision.UNKNOWN)throw new Exception("Waiting for clear holding slots");
         if(previous==null){
-            for(int i=0;i<4;i++)if(o.slots[i]>=0){if(o.progress[i]<0)throw new Exception("Reading existing fill percentages");remaining[i]=100-o.progress[i];if(remaining[i]==0)finishingSince[i]=o.nanos;}
+            boolean missing=false;
+            for(int i=0;i<4;i++){
+                if(initialColor[i]!=o.slots[i]){initialColor[i]=o.slots[i];initialProgress[i]=-1;}
+                if(o.slots[i]>=0){if(o.progress[i]>=0)initialProgress[i]=Math.max(initialProgress[i],o.progress[i]);if(initialProgress[i]<0)missing=true;else {remaining[i]=100-initialProgress[i];if(remaining[i]==0)finishingSince[i]=o.nanos;}}
+            }
+            if(missing)throw new Exception("Reading existing fill percentages; retaining partial reads");
             reference=o;
         }else{
             for(int i=0;i<4;i++){

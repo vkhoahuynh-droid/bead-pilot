@@ -152,14 +152,13 @@ public final class AutomaticRootMain {
                         lastRefresh=now;
                         try{found=detector.detect(frame,config);}catch(IllegalStateException e){
                             plan=null;planKey="";layoutStability.clear();lastGeometryGood=0;
-                            if(geometryFailureSince==0)geometryFailureSince=now;
-                            if(now-geometryFailureSince>6_000_000_000L)resetModel();
+                            if(geometryFailureSince==0){geometryFailureSince=now;tracker.resetMotion();}
                             status(now,"Scanning again; taps paused: "+e.getMessage());Thread.sleep(250);continue;
                         }
                         if(!AutoLayout.sameGeometry(config,found.config,frame.width,frame.height)){
                             lastGeometryGood=0;plan=null;planKey="";
-                            if(layoutStability.observe(found.config,frame.width,frame.height))apply(found,frame,focus);
-                            status(now,"Layout changed; rechecking geometry before tapping");
+                            if(geometryFailureSince==0){geometryFailureSince=now;tracker.resetMotion();}
+                            status(now,"Holding row or track uncertain; keeping known slots and fill state");
                             Thread.sleep(250);continue;
                         }
                         layoutStability.clear();
@@ -198,9 +197,9 @@ public final class AutomaticRootMain {
                 }catch(Exception e){
                     String message=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();status(now,message);
                     if(message.contains("direction reversed")){
-                        ArrayList<float[]>p=config.lanes.get(0);float[]first=p.remove(0);Collections.reverse(p);p.add(0,first);tracker=new Tracker(config.interval,true);plan=null;epoch++;
+                        ArrayList<float[]>p=config.lanes.get(0);float[]first=p.remove(0);Collections.reverse(p);p.add(0,first);tracker.resetMotion();plan=null;planKey="";
                     }else if(!message.startsWith("Reading existing")){
-                        if(now-modelSince>8_000_000_000L){resetModel();lastFull=0;}
+                        if(now-modelSince>8_000_000_000L){plan=null;planKey="";lastGeometryGood=0;if(geometryFailureSince==0){geometryFailureSince=now;tracker.resetMotion();}}
                     }
                 }
                 Thread.sleep(250);

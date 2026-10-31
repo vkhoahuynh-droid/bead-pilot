@@ -152,7 +152,7 @@ public final class PilotService extends Service {
         floatingButton(controls,"Pause",this::pauseAutomatic);
         floatingButton(controls,"Stop",this::stopSelf);
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(-2,-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_SECURE,PixelFormat.TRANSLUCENT);
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT);
         p.gravity=Gravity.BOTTOM|Gravity.RIGHT;p.y=12;
         // Drag the status area out of the way. It never intercepts board-wide touches.
         overlayStatus.setOnTouchListener(new View.OnTouchListener(){float x,y;int ox,oy;

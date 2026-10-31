@@ -46,6 +46,26 @@ public final class AdaptiveLayoutTest {
     }
     static AutoLayout.Detection detect(int shape,int wall,int count,boolean blocked){return new AutoLayout().detect(scene(shape,wall,count,blocked,true,false));}
     static void rejected(Capture.Frame f,String message){boolean rejected=false;try{new AutoLayout().detect(f);}catch(IllegalStateException expected){rejected=true;}check(rejected,message);}
+    static Capture.Frame trayState(int occupied){
+        Capture.Frame base=scene(3,0xffeeeeee,7,false,true,false);BufferedImage image=new BufferedImage(582,1280,BufferedImage.TYPE_INT_RGB);int[]pixels=base.pixels.clone();
+        for(int i=0;i<pixels.length;i++)if((pixels[i]&0xffffff)==0xced4df)pixels[i]=0xffe5d8bf;
+        image.setRGB(0,0,582,1280,pixels,0,582);Graphics2D g=image.createGraphics();g.setColor(new Color(0xffe5d8bf));g.fillRect(130,690,340,100);
+        int[]colors={0xff738595,0xffa45301,0xffb8e900,0xfff6ede0};
+        if(occupied>=0)for(int i=0;i<4;i++){boolean full=(occupied&(1<<i))!=0;g.setColor(new Color(full?colors[i]:0xfff8f5e9));g.fillRoundRect(145+i*80,full?700:730,52,full?70:38,10,10);
+            if(full&&i==3){g.setColor(new Color(0xffd5d2cf));g.fillRect(145+i*80,744,52,24);}}
+        g.dispose();return new Capture.Frame(582,1280,image.getRGB(0,0,582,1280,null,0,582));
+    }
+    static void trayChecks(){
+        AutoLayout detector=new AutoLayout();Config empty=detector.detect(trayState(0)).config;
+        for(int occupied:new int[]{0,1,8,9,15}){
+            Capture.Frame f=trayState(occupied);Config fresh=detector.detect(f).config,continued=detector.detect(f,empty).config;
+            for(float[]p:fresh.slots)check(Math.abs(p[1]-745/1280f)<.025,"discover real holding row, not lower four colored squares, occupancy "+occupied);
+            check(fresh.buttons.size()==7,"board squares stay below the real holding row");
+            check(AutoLayout.sameGeometry(empty,continued,582,1280),"occupation changes do not replace established slots");
+        }
+        rejected(trayState(-1),"missing holding row cannot be replaced by a lower board row");
+        boolean rejected=false;try{detector.detect(trayState(-1),empty);}catch(IllegalStateException expected){rejected=true;}check(rejected,"old tray anchors require visible material, not bare floor");
+    }
     public static void main(String[]args){
         for(int shape=0;shape<3;shape++)for(int wall:new int[]{0xff8296eb,0xffe52c31,0xff16a84b,0xfff5e300,0xffeeeeee,0xff505050}){
             Config c=detect(shape,wall,7,false).config;
@@ -92,6 +112,7 @@ public final class AdaptiveLayoutTest {
         for(int y=1000;y<1004;y++)for(int x=484;x<490;x++)elbow[y*582+x]=0xffeeeeee;
         Config corners=new AutoLayout().detect(new Capture.Frame(582,1280,elbow)).config;
         check(corners.buttons.size()==7,"white wall elbows are not added as phantom cups: "+corners.buttons.size());
+        trayChecks();
         AutoLayout.Stability gate=new AutoLayout.Stability();
         check(!gate.observe(ellipse,582,1280),"one frame cannot enable taps");
         check(gate.observe(ellipse,582,1280),"two stable frames accepted");
